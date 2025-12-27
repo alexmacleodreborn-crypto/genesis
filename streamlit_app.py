@@ -124,13 +124,14 @@ class MindMap:
 # =========================================================
 #  GENESIS COGNITIVE ENGINE
 # =========================================================
-
 class GenesisMind:
     """
     Newborn cognitive engine with:
     - SLED-style coherence physics
     - Mind-map graph
     - Episodic + semantic memory (with decay & reinforcement)
+    - Crossover Matrix (identity gate)
+    - Information-gain gating
     - Simple sense-of-self summary
     """
 
@@ -185,6 +186,116 @@ class GenesisMind:
         mind.memory = [MemoryItem(**m) for m in data.get("memory", [])]
         mind.self_profile = data.get("self_profile", mind.self_profile)
         return mind
+
+    # ======================================================
+    #  TAG EXTRACTION
+    # ======================================================
+    def _extract_tags(self, text: str) -> List[str]:
+        words = text.lower().replace(",", " ").replace(".", " ").split()
+        stop = {"the","and","or","of","in","a","an","to","for","is","are","as","on","that","this","with"}
+        tags = [w for w in words if len(w) > 3 and w not in stop]
+
+        # update identity
+        for t in tags:
+            self.self_profile["top_tags"][t] = self.self_profile["top_tags"].get(t, 0) + 1
+
+        return tags
+
+    # ======================================================
+    #  CROSSOVER MATRIX (IDENTITY GATE)
+    # ======================================================
+    def _compute_crossover_matrix(self, tags: List[str]) -> Dict[str, Any]:
+        tag_counts = self.self_profile.get("top_tags", {})
+        core_tags = [t for t, _ in sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:10]]
+
+        if not core_tags:
+            return {
+                "match_ratio": 0.0,
+                "core_tags": [],
+                "matched_tags": [],
+                "independent_tags": tags,
+            }
+
+        tag_set = set(tags)
+        core_set = set(core_tags)
+
+        matched = list(tag_set.intersection(core_set))
+        independent = list(tag_set.difference(core_set))
+
+        match_ratio = len(matched) / max(1, len(tag_set))
+
+        return {
+            "match_ratio": match_ratio,
+            "core_tags": core_tags,
+            "matched_tags": matched,
+            "independent_tags": independent,
+        }
+
+    # ======================================================
+    #  MAIN PROCESS LOOP (WITH INFORMATION-GAIN GATE)
+    # ======================================================
+    def process(self, user_input: str) -> Dict[str, Any]:
+        self.age_interactions += 1
+        self.self_profile["total_inputs"] += 1
+
+        domains = self._detect_domains(user_input)
+        for d in domains:
+            self.self_profile["domain_counts"][d] += 1
+
+        tags = self._extract_tags(user_input)
+        self._decay_memory()
+
+        background = self._compile_background(user_input, domains)
+
+        # SLED coherence loop
+        coherence_state = None
+        for i in range(1, self.config.max_iterations + 1):
+            coherence_state = self._compute_coherence(user_input, background, i)
+            time.sleep(0.15)
+            if coherence_state.coherence >= self.config.truth_threshold:
+                break
+
+        # Crossover Matrix (identity gate)
+        crossover = self._compute_crossover_matrix(tags)
+
+        physics_ok = coherence_state.coherence >= self.config.truth_threshold
+        identity_ok = crossover["match_ratio"] >= 0.40  # adjustable threshold
+
+        # ==================================================
+        #  INFORMATION-GAIN GATE
+        # ==================================================
+        if not physics_ok or not identity_ok:
+            probing = self._generate_probing_questions(user_input, domains, background, coherence_state)
+
+            if physics_ok and not identity_ok:
+                probing.insert(
+                    0,
+                    "This touches ideas I have not yet integrated into my identity. "
+                    "Can you connect it to something we’ve already discussed?"
+                )
+
+            return {
+                "mode": "probing",
+                "probing_questions": probing,
+                "coherence": coherence_state,
+                "background": background,
+                "crossover": crossover,
+            }
+
+        # ==================================================
+        #  BOTH GATES OPEN → ANSWER ALLOWED
+        # ==================================================
+        answer = self._generate_answer(user_input, domains, background, coherence_state)
+        self._store_memories(user_input, answer, domains, tags, coherence_state)
+
+        return {
+            "mode": "answer",
+            "answer": answer,
+            "coherence": coherence_state,
+            "background": background,
+            "crossover": crossover,
+        }
+
     # ------------------------------
     #  CROSSOVER MATRIX (TAG-LEVEL MATCH)
     # ------------------------------
