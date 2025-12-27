@@ -185,6 +185,42 @@ class GenesisMind:
         mind.memory = [MemoryItem(**m) for m in data.get("memory", [])]
         mind.self_profile = data.get("self_profile", mind.self_profile)
         return mind
+    # ------------------------------
+    #  CROSSOVER MATRIX (TAG-LEVEL MATCH)
+    # ------------------------------
+    def _compute_crossover_matrix(self, tags: List[str]) -> Dict[str, Any]:
+        """
+        Compares current input tags with the mind's own top 10 tags.
+        Returns:
+          - match_ratio: 0–1
+          - core_tags: list of core tags used
+          - matched_tags: tags that are in both sets
+          - independent_tags: tags not in core set
+        """
+        # mind's stored tags and counts
+        tag_counts = self.self_profile.get("top_tags", {})
+        # top 10 tags by frequency
+        core_tags = [t for t, _ in sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:10]]
+
+        if not core_tags:
+            # At birth, no core tags yet, so accept everything as exploratory
+            matched = []
+            independent = tags[:]
+            match_ratio = 0.0
+        else:
+            tag_set = set(tags)
+            core_set = set(core_tags)
+            matched = list(tag_set.intersection(core_set))
+            independent = list(tag_set.difference(core_set))
+            # match ratio: how much of the input is aligned with core identity
+            match_ratio = len(matched) / max(1, len(tag_set))
+
+        return {
+            "match_ratio": match_ratio,
+            "core_tags": core_tags,
+            "matched_tags": matched,
+            "independent_tags": independent,
+        }
 
     # ------------------------------
     #  PUBLIC ENTRY
