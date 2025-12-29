@@ -29,6 +29,10 @@ def main():
     # LEFT: main interaction
     with col_left:
         st.title("SLED AI — A7DO Cognitive Engine")
+        st.caption(
+            f"Developmental age: {mind.interaction_count} interactions · "
+            f"Total memories: {mind.memory_size()}"
+        )
         st.markdown("**Welcome, Alex.**")
 
         st.markdown("### Ask A7DO a question")
@@ -60,7 +64,7 @@ def main():
         else:
             st.info("No memories yet. As soon as A7DO processes its first question, its childhood will be auto-learned and logged here.")
 
-    # RIGHT: internal timeline + simple graph
+    # RIGHT: internal timeline + basic graph info
     with col_right:
         st.markdown("### A7DO internal timeline")
         records = mind.timeline_records()
@@ -95,13 +99,10 @@ def main():
             st.altair_chart(chart, use_container_width=True)
 
         st.markdown("---")
-        st.markdown("### A7DO memory graph (nodes & links)")
-        if st.session_state.last_answer:
-            graph_data = mind.process_question  # just to show where it is; graph is already in result
-        # For now, we just tell the user that the graph exists in the mind;
-        # we’ll wire a full visual later.
-
-        st.info("Memory graph is being built internally. We can add a full visual network view in the next step.")
+        st.markdown("### A7DO memory graph (structure overview)")
+        graph = mind.build_graph()
+        st.write(f"Nodes: {len(graph['nodes'])}, Edges: {len(graph['edges'])}")
+        st.caption("We can turn this into a full visual mind-map in a later step.")
 
         st.markdown("---")
         if st.button("Reset A7DO (new birth)"):
