@@ -20,40 +20,43 @@ class A7DOMind:
         self.interaction_count = 0
         self.profile: ChildProfile = get_alex_profile()
         self._last_learning_summary: str = ""
+        self._last_active_path: List[int] = []
 
     # ------------------------------
     #  BASIC UTILITIES
     # ------------------------------
     def _extract_tags(self, text: str) -> List[str]:
-    words = [w.strip(".,!?").lower() for w in text.split()]
-    stop = {"the", "and", "or", "of", "in", "a", "an", "to", "for", "is", "are", "as", "on", "that", "this", "with"}
-    base_words = [w for w in words if len(w) > 2 and w not in stop]
+        words = [w.strip(".,!?").lower() for w in text.split()]
+        stop = {
+            "the", "and", "or", "of", "in", "a", "an", "to",
+            "for", "is", "are", "as", "on", "that", "this", "with",
+        }
+        base_words = [w for w in words if len(w) > 2 and w not in stop]
 
-    # NEW: semantic tagging
-    return semantic_tags(base_words)
+        # Semantic tagging
+        return semantic_tags(base_words)
 
     def _detect_domains(self, tags: List[str]) -> List[str]:
         t = set(tags)
         domains: List[str] = []
 
-        if {"object", "objects", "names"} & t:
-            domains.append("language_symbols")
-        if {"people", "relationships", "family"} & t:
-            domains.append("relationships_empathy")
-        if {"story", "stories", "time", "meaning"} & t:
+        if {"language_symbols", "narrative"} & t or {"story", "stories"} & t:
             domains.append("narrative")
-        if {"fear", "sadness", "happiness", "emotions"} & t:
+        if {"people", "relationships", "family"} & t or {"relationships_empathy"} & t:
+            domains.append("relationships_empathy")
+        if {"emotion", "emotion_valence", "affect"} & t or {"emotion"} & t:
             domains.append("affect")
-        if {"name", "your", "alex", "a7do", "father"} & t:
+        if {"identity"} & t or {"name", "alex", "a7do", "father"} & t:
             domains.append("identity")
 
-        # Curriculum domains
-        if any(tok.isdigit() for tok in tags) or {"math", "number", "numbers"} & t:
+        if {"math"} & t:
             domains.append("math")
-        if {"word", "words", "grammar", "read", "write"} & t:
+        if {"english"} & t:
             domains.append("english")
-        if {"science", "gravity", "atom", "energy", "planet", "biology"} & t:
+        if {"science"} & t:
             domains.append("science")
+        if {"injury", "body"} & t:
+            domains.append("body_health")
 
         if not domains:
             domains.append("language_symbols")
@@ -101,6 +104,8 @@ class A7DOMind:
 
         # Recall
         related_indices = self.memory.find_related(tags)
+        active_path = related_indices.copy()
+
         recall_strength = 0.0
         if related_indices:
             recall_strength = min(1.0, math.log(len(related_indices) + 1, 5))
@@ -156,7 +161,7 @@ class A7DOMind:
 
         # Store this interaction as experience or identity
         kind = "experience"
-        if {"name", "alex", "a7do", "father", "spirit"} & set(tags):
+        if {"identity"} & set(tags) or {"name", "alex", "a7do", "father", "spirit"} & set(tags):
             kind = "identity"
 
         mem_idx = self.memory.add_memory(
@@ -170,6 +175,10 @@ class A7DOMind:
             emotion_valence=valence_q,
             emotion_labels=labels_q,
         )
+
+        # Update active path with the newly stored memory as well (optional)
+        active_path.append(mem_idx)
+        self._last_active_path = active_path
 
         # Answer synthesis
         answer_lines = []
@@ -230,6 +239,7 @@ class A7DOMind:
             "coherence": coherence_state,
             "related_indices": related_indices,
             "new_memory_index": mem_idx,
+            "active_path": active_path,
         }
 
     # ------------------------------
@@ -270,7 +280,7 @@ class A7DOMind:
         return self.memory.size()
 
     def build_graph(self) -> Dict[str, Any]:
-        return graph_for_visualisation(self.memory)
+        return graph_for_visualisation(self.memory, self._last_active_path)
 
     def thinking_style_summary(self) -> str:
         return (
@@ -278,3 +288,6 @@ class A7DOMind:
             f"{self.profile.description} "
             f"(thinking style: {', '.join(self.profile.thinking_style)})"
         )
+
+    def active_path(self) -> List[int]:
+        return self._last_active_path
