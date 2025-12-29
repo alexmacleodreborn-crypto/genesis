@@ -13,10 +13,10 @@ class CoherenceState:
 
 def compute_coherence(domains: List[str], recall_strength: float, emotional_valence: float) -> CoherenceState:
     """
-    Very simple placeholder for SLED-style coherence:
+    Simple placeholder for SLED-style coherence:
     - more domains → higher entropy (sigma)
     - stronger recall → higher z (confidence)
-    - emotional valence slightly modulates
+    - emotional valence modulates z slightly
     """
     num_domains = max(1, len(domains))
     domain_entropy = 0.3 + 0.1 * (num_domains - 1)
@@ -35,4 +35,21 @@ def compute_coherence(domains: List[str], recall_strength: float, emotional_vale
         divergence=divergence,
         coherence=coherence,
         domains=domains,
+    )
+
+
+def describe_coherence(state: CoherenceState) -> str:
+    """
+    Human-readable description in SLED-ish language.
+    """
+    level = "low"
+    if state.coherence > 0.75:
+        level = "high"
+    elif state.coherence > 0.45:
+        level = "medium"
+
+    return (
+        f"Using my SLED-style intuition, this feels like {level} coherence "
+        f"(coherence={state.coherence:.2f}, sigma={state.sigma:.2f}, z={state.z:.2f}, "
+        f"domains={state.domains})."
     )
