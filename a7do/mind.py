@@ -3,7 +3,7 @@ import math
 
 from .memory import MemorySystem
 from .timeline import Timeline
-from .emotions import infer_emotion_from_text, blend_emotions
+from .emotions import infer_emotion_from_text
 from .coherence import compute_coherence, CoherenceState
 from .childhood import run_initial_childhood, maybe_extend_childhood_from_question
 from .graph import build_memory_graph
@@ -168,9 +168,6 @@ class A7DOMind:
 
         answer_text = "\n".join(answer_lines)
 
-        # Graph
-        graph_data = build_memory_graph(self.memory)
-
         return {
             "answer": answer_text,
             "tags": tags,
@@ -179,7 +176,6 @@ class A7DOMind:
             "coherence": coherence_state,
             "related_indices": related_indices,
             "new_memory_index": mem_idx,
-            "graph": graph_data,
         }
 
     # ------------------------------
@@ -190,3 +186,9 @@ class A7DOMind:
 
     def memory_summary_lines(self) -> List[str]:
         return self.memory.summary_lines()
+
+    def memory_size(self) -> int:
+        return self.memory.size()
+
+    def build_graph(self) -> Dict[str, Any]:
+        return build_memory_graph(self.memory)
