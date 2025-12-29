@@ -9,8 +9,8 @@ def build_memory_graph(memory: MemorySystem) -> Dict[str, List[Dict[str, Any]]]:
     - nodes: memories
     - edges: explicit links
     """
-    nodes = []
-    edges = []
+    nodes: List[Dict[str, Any]] = []
+    edges: List[Dict[str, Any]] = []
 
     for i, m in enumerate(memory.memories):
         nodes.append(
@@ -33,7 +33,6 @@ def layout_memory_graph(
     """
     Simple radial layout:
     - nodes positioned on a circle by index
-    - can be refined later (e.g., by clustering)
     """
     n = max(1, len(nodes))
     radius = 1.0
@@ -46,11 +45,21 @@ def layout_memory_graph(
     return nodes, edges
 
 
-def graph_for_visualisation(memory: MemorySystem) -> Dict[str, List[Dict[str, Any]]]:
+def graph_for_visualisation(memory: MemorySystem, active_path: List[int]) -> Dict[str, List[Dict[str, Any]]]:
     """
-    Convenience: build graph, compute layout, and return nodes/edges
-    ready for visualisation.
+    Build graph, compute layout, and mark active nodes/edges.
     """
     graph = build_memory_graph(memory)
     nodes, edges = layout_memory_graph(graph["nodes"], graph["edges"])
+
+    active_set = set(active_path or [])
+
+    # Mark active nodes
+    for n in nodes:
+        n["active"] = n["id"] in active_set
+
+    # Mark active edges (both ends must be active)
+    for e in edges:
+        e["active"] = (e["source"] in active_set and e["target"] in active_set)
+
     return {"nodes": nodes, "edges": edges}
