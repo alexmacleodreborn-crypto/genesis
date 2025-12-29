@@ -5,7 +5,69 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
+import requests
 import streamlit as st
+
+
+# =========================================================
+#  CONFIGURE WEB SEARCH BACKEND HERE
+# =========================================================
+
+# Replace this with your real search endpoint and key.
+# Expectation: GET or POST returns JSON with a field containing result texts/snippets.
+SEARCH_API_ENDPOINT = "https://your-search-endpoint.example.com/search"
+SEARCH_API_KEY = os.getenv("SEARCH_API_KEY", "YOUR_API_KEY_HERE")
+
+
+def perform_web_search(query: str, max_results: int = 5) -> List[str]:
+    """
+    Generic web search wrapper.
+    You must adapt this to your actual search API.
+    It should return a list of short text snippets relevant to the query.
+    """
+    try:
+        # Example assumes a GET API like:
+        #   /search?q=...&key=...
+        # and returns JSON: { "results": [ {"snippet": "..."} , ... ] }
+        params = {
+            "q": query,
+            "key": SEARCH_API_KEY,
+            "num": max_results,
+        }
+        resp = requests.get(SEARCH_API_ENDPOINT, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Adjust this extraction according to your API's schema.
+        snippets = []
+        if isinstance(data, dict):
+            results = data.get("results") or data.get("items") or []
+            for item in results[:max_results]:
+                snippet = (
+                    item.get("snippet")
+                    or item.get("description")
+                    or item.get("title")
+                    or ""
+                )
+                if snippet:
+                    snippets.append(snippet)
+        elif isinstance(data, list):
+            for item in data[:max_results]:
+                if isinstance(item, str):
+                    snippets.append(item)
+                elif isinstance(item, dict):
+                    snippet = item.get("snippet") or item.get("text") or ""
+                    if snippet:
+                        snippets.append(snippet)
+
+        if not snippets:
+            snippets = [f"(No structured snippets returned for query: {query})"]
+
+        return snippets
+
+    except Exception as e:
+        # Fallback: return a stub with error context but not the raw error text
+        return [f"(Search error for '{query}'. Using placeholder text instead.)"]
 
 
 # =========================================================
@@ -40,7 +102,7 @@ class GenesisConfig:
 
 @dataclass
 class MemoryItem:
-    kind: str              # 'episodic' | 'semantic' | 'developmental'
+    kind: str              # 'episodic' | 'semantic' | 'developmental' | 'search_log'
     content: str
     tags: List[str]
     strength: float
@@ -56,13 +118,14 @@ class MemoryItem:
 class GenesisMind:
     """
     Developmental cognitive engine with:
-    - Interactive early-learning modules (0–5)
+    - Automatic early-learning (0–5) using web search
+    - Records all early-learning searches
     - Stages: infancy -> schooling -> advanced
     - SLED coherence physics
     - Tag-based identity
-    - Episodic + semantic + developmental memory
+    - Episodic + semantic + developmental + search-log memory
     - Recall + deliberation pipeline
-    - Simple web-search learning stub
+    - Web search learning in schooling & advanced stages
     - Sense-of-self and maturity score
     """
 
@@ -92,17 +155,11 @@ class GenesisMind:
         # developmental stage: 'infancy', 'schooling', 'advanced'
         self.stage: str = "infancy"
 
-        # interactive early-learning modules
-        self.early_learning_modules: Dict[str, bool] = {
-            "objects": False,
-            "family": False,
-            "emotions": False,
-            "cause_effect": False,
-            "safety": False,
-            "stories": False,
-        }
-        self.active_module: Optional[str] = None
-        self.module_step: int = 0
+        # has the automatic early-learning curriculum been completed?
+        self.early_learning_complete: bool = False
+
+        # last searches used (for display)
+        self.last_search_log: List[Dict[str, Any]] = []
 
     # ------------------------------
     #  PERSISTENCE
@@ -114,9 +171,8 @@ class GenesisMind:
             "memory": [asdict(m) for m in self.memory],
             "self_profile": self.self_profile,
             "stage": self.stage,
-            "early_learning_modules": self.early_learning_modules,
-            "active_module": self.active_module,
-            "module_step": self.module_step,
+            "early_learning_complete": self.early_learning_complete,
+            "last_search_log": self.last_search_log,
         }
         with open(self.config.persistence_file, "w") as f:
             json.dump(data, f, indent=2)
@@ -133,19 +189,8 @@ class GenesisMind:
         mind.memory = [MemoryItem(**m) for m in data.get("memory", [])]
         mind.self_profile = data.get("self_profile", mind.self_profile)
         mind.stage = data.get("stage", "infancy")
-        mind.early_learning_modules = data.get(
-            "early_learning_modules",
-            {
-                "objects": False,
-                "family": False,
-                "emotions": False,
-                "cause_effect": False,
-                "safety": False,
-                "stories": False,
-            },
-        )
-        mind.active_module = data.get("active_module", None)
-        mind.module_step = data.get("module_step", 0)
+        mind.early_learning_complete = data.get("early_learning_complete", False)
+        mind.last_search_log = data.get("last_search_log", [])
         return mind
 
     # =====================================================
@@ -157,7 +202,7 @@ class GenesisMind:
         stop = {
             "the","and","or","of","in","a","an","to","for","is","are","as","on",
             "that","this","with","you","your","my","have","has","it","they","them",
-            "was","were","from","about"
+            "was","were","from","about","into","over","under","very","just"
         }
         tags = [w for w in words if len(w) > 3 and w not in stop]
 
@@ -311,9 +356,6 @@ class GenesisMind:
     #  MATURITY & STAGE LOGIC
     # =====================================================
 
-    def _all_early_modules_complete(self) -> bool:
-        return all(self.early_learning_modules.values())
-
     def _compute_maturity_score(self) -> float:
         total_inputs = self.self_profile["total_inputs"]
         num_tags = len(self.self_profile["top_tags"])
@@ -323,22 +365,19 @@ class GenesisMind:
         )
         domain_diversity = sum(1 for c in self.self_profile["domain_counts"].values() if c > 0)
 
-        # more aggressive growth
         score = (
-            total_inputs * 10.0 +
-            num_tags * 2.0 +
-            avg_strength * 50.0 +
-            domain_diversity * 20.0
+            total_inputs * 5.0 +
+            num_tags * 1.5 +
+            avg_strength * 40.0 +
+            domain_diversity * 15.0
         )
         return score
 
     def _update_stage(self):
-        # If early-learning simulation not complete, force infancy
-        if not self._all_early_modules_complete():
+        if not self.early_learning_complete:
             self.stage = "infancy"
             return
 
-        # Once all early modules complete, allow schooling and advanced
         score = self._compute_maturity_score()
         if score < 300:
             self.stage = "schooling"
@@ -346,153 +385,101 @@ class GenesisMind:
             self.stage = "advanced"
 
     # =====================================================
-    #  EARLY-LEARNING MODULES (INTERACTIVE)
+    #  WEB SEARCH WRAPPER WITH LOGGING
     # =====================================================
 
-    def _early_module_question(self, module: str, step: int) -> Optional[str]:
-        # one question at a time
-        if module == "objects":
-            questions = [
-                "Can you name three things you see around you right now?",
-                "Can you tell me an animal you like?",
-                "Can you name something you can eat?",
-            ]
-        elif module == "family":
-            questions = [
-                "Who is in your family?",
-                "Do you have brothers or sisters?",
-                "Is there someone in your family you are very close to?",
-            ]
-        elif module == "emotions":
-            questions = [
-                "What is something that makes people happy?",
-                "What is something that makes someone sad?",
-                "Can you tell me about a time someone felt scared?",
-            ]
-        elif module == "cause_effect":
-            questions = [
-                "What happens if you drop something from your hand?",
-                "What do people usually do when they are tired?",
-                "What happens when it rains a lot?",
-            ]
-        elif module == "safety":
-            questions = [
-                "What are some things children should stay away from?",
-                "What is something that is safe to touch?",
-                "What is something that can hurt you if you are not careful?",
-            ]
-        elif module == "stories":
-            questions = [
-                "Can you tell me a short story or memory from your life?",
-                "Can you describe something that happened today?",
-                "What is your favourite memory?",
-            ]
-        else:
-            return None
+    def _search_and_log(self, query: str, context: str) -> List[str]:
+        snippets = perform_web_search(query)
+        self.last_search_log = []
+        now = datetime.utcnow().timestamp()
 
-        if step < len(questions):
-            return questions[step]
-        return None
+        for idx, s in enumerate(snippets):
+            tags = self._extract_tags(s)
+            self._store_memory(
+                kind="search_log",
+                content=s,
+                tags=tags,
+                strength=0.5,
+                meta={"query": query, "context": context, "rank": idx},
+            )
+            self.last_search_log.append(
+                {
+                    "query": query,
+                    "rank": idx,
+                    "snippet": s[:200],
+                    "context": context,
+                }
+            )
 
-    def run_early_learning_step(self, user_answer: str) -> Dict[str, Any]:
-        """
-        Process one step of the active early-learning module:
-        - Use the last question + answer
-        - Store developmental memory
-        - Advance step or mark module complete
-        """
-        if not self.active_module:
-            return {
-                "completed": False,
-                "message": "No early-learning module is currently active.",
-            }
-
-        module = self.active_module
-        step = self.module_step
-
-        # Extract tags from answer and store developmental memory
-        tags = self._extract_tags(user_answer)
-        self._store_memory(
-            kind="developmental",
-            content=f"[{module} step {step}] {user_answer}",
-            tags=tags,
-            strength=0.7,
-            meta={"module": module, "step": step},
-        )
-
-        # Advance step
-        next_step = step + 1
-        next_question = self._early_module_question(module, next_step)
-
-        if next_question is None:
-            # module complete
-            self.early_learning_modules[module] = True
-            self.active_module = None
-            self.module_step = 0
-            return {
-                "completed": True,
-                "module": module,
-                "next_question": None,
-                "message": f"The {module} module is complete. You helped me learn a lot.",
-            }
-        else:
-            # continue module
-            self.module_step = next_step
-            return {
-                "completed": False,
-                "module": module,
-                "next_question": next_question,
-                "message": f"Thank you. I am still learning about {module}.",
-            }
-
-    def start_early_learning_module(self, module: str) -> Optional[str]:
-        """
-        Start a module and return the first question.
-        """
-        if self.early_learning_modules.get(module, False):
-            return None  # already complete
-        self.active_module = module
-        self.module_step = 0
-        return self._early_module_question(module, 0)
+        return snippets
 
     # =====================================================
-    #  LEARNING MODES (SCHOOLING / ADVANCED)
+    #  AUTOMATIC EARLY-LEARNING (0–5) USING WEB SEARCH
     # =====================================================
 
-    def _search_web(self, query: str) -> List[str]:
+    def run_early_learning_if_needed(self):
         """
-        Stub for web search.
-        Replace this with a real search integration in your environment.
+        Automatically runs a small curriculum of web-search-based early learning
+        if it has not yet been completed.
         """
-        return [
-            f"(Example search snippet 1 about '{query}')",
-            f"(Example search snippet 2 giving another angle on '{query}')",
-            f"(Example search snippet 3 with a simple explanation of '{query}')",
+        if self.early_learning_complete:
+            return
+
+        curriculum = [
+            ("objects_basic", "simple objects for toddlers"),
+            ("animals_basic", "common animals for young children"),
+            ("family_basic", "family members words for kids"),
+            ("emotions_basic", "basic emotions list for children"),
+            ("actions_basic", "simple verbs for kids"),
+            ("safety_basic", "safety rules for young children"),
+            ("stories_basic", "short simple stories for children"),
         ]
 
+        for module_name, query in curriculum:
+            snippets = self._search_and_log(query, context=f"early_learning:{module_name}")
+            combined = "\n".join(snippets)
+            tags = self._extract_tags(combined)
+            self._store_memory(
+                kind="developmental",
+                content=f"[EARLY CURRICULUM {module_name}] {combined[:500]}",
+                tags=tags,
+                strength=0.7,
+                meta={"module": module_name, "query": query},
+            )
+
+        self.early_learning_complete = True
+        self.stage = "schooling"
+
+    # =====================================================
+    #  SCHOOLING & ADVANCED LEARNING
+    # =====================================================
+
     def _learn_schooling(self, user_input: str, tags: List[str], domains: List[str]) -> Dict[str, Any]:
-        snippets = self._search_web(user_input)
-        search_text = " ".join(snippets)
-        search_tags = self._extract_tags(search_text)
+        q = f"{user_input} for school students"
+        snippets = self._search_and_log(q, context="schooling")
+        combined = "\n".join(snippets)
+        search_tags = self._extract_tags(combined)
 
         lesson = f"Schooling lesson based on: {user_input}\nSnippets:\n" + "\n".join(snippets[:3])
         self._store_memory(
             kind="semantic",
             content=lesson,
             tags=tags + search_tags,
-            strength=0.6,
-            meta={"mode": "schooling"},
+            strength=0.65,
+            meta={"mode": "schooling", "query": q},
         )
         return {
             "lesson": lesson,
             "snippets": snippets,
             "search_tags": search_tags,
+            "query": q,
         }
 
     def _learn_advanced(self, user_input: str, tags: List[str], domains: List[str]) -> Dict[str, Any]:
-        snippets = self._search_web(user_input)
-        search_text = " ".join(snippets)
-        search_tags = self._extract_tags(search_text)
+        q = f"{user_input} detailed explanation"
+        snippets = self._search_and_log(q, context="advanced")
+        combined = "\n".join(snippets)
+        search_tags = self._extract_tags(combined)
 
         recalled = self._recall_memory(tags, k=5)
         synthesis_lines = []
@@ -510,14 +497,15 @@ class GenesisMind:
             kind="semantic",
             content=synthesis,
             tags=tags + search_tags,
-            strength=0.7,
-            meta={"mode": "advanced"},
+            strength=0.75,
+            meta={"mode": "advanced", "query": q},
         )
         return {
             "synthesis": synthesis,
             "snippets": snippets,
             "search_tags": search_tags,
             "recalled": recalled,
+            "query": q,
         }
 
     # =====================================================
@@ -583,11 +571,11 @@ class GenesisMind:
         lines: List[str] = []
 
         if self.stage == "infancy":
-            lines.append("I am in my infancy stage, but my early-learning modules are complete.")
+            lines.append("I am in my infancy stage, still mostly grounded in early-learning knowledge.")
         elif self.stage == "schooling":
-            lines.append("I am in my schooling stage, learning structured subjects.")
+            lines.append("I am in my schooling stage, learning structured subjects from search.")
         else:
-            lines.append("I am in my advanced stage, integrating what I know with new information.")
+            lines.append("I am in my advanced stage, integrating earlier knowledge with deeper search.")
 
         if style == "plain":
             lines.append("I'll keep this in simple, clear language.")
@@ -599,7 +587,7 @@ class GenesisMind:
         lines.append(f"\nFrom your input, I see it mainly touches: {domain_labels}.")
 
         if self.stage == "schooling" and learning_output is not None:
-            lines.append("\nFrom my schooling-style learning, I gathered:")
+            lines.append("\nFrom schooling-style learning, I gathered:")
             for s in learning_output.get("snippets", [])[:3]:
                 lines.append(f"- {s}")
         elif self.stage == "advanced" and learning_output is not None:
@@ -637,29 +625,26 @@ class GenesisMind:
         top_tags = sorted(tags.items(), key=lambda x: x[1], reverse=True)[:5]
         tag_str = ", ".join([f"{t}×{c}" for t, c in top_tags]) if top_tags else "none yet"
 
-        modules_state = ", ".join(
-            f"{name}:{'✓' if done else '…'}"
-            for name, done in self.early_learning_modules.items()
-        )
-
         return (
             f"- Stage: {self.stage}\n"
+            f"- Early-learning complete: {self.early_learning_complete}\n"
             f"- Maturity score: {maturity:.1f}\n"
             f"- I have experienced {total} interaction(s).\n"
             f"- My most engaged domains so far: {', '.join(dominant) if dominant else 'none yet'}.\n"
             f"- Recurring concepts/tags in my experience: {tag_str}.\n"
-            f"- Early-learning modules: {modules_state}\n"
-            "- When all early-learning modules are complete, I move into schooling and beyond."
+            "- I began with an automatic early-learning phase using web search, "
+            "and now I continue learning from our interactions and new searches."
         )
 
     # =====================================================
-    #  MAIN PROCESS LOOP (NORMAL CHAT)
+    #  MAIN PROCESS LOOP
     # =====================================================
 
     def process(self, user_input: str, style: str) -> Dict[str, Any]:
-        """
-        Normal conversational processing (not early-learning module answers).
-        """
+        # Ensure early-learning curriculum has been run once
+        if not self.early_learning_complete:
+            self.run_early_learning_if_needed()
+
         self.age_interactions += 1
         self.self_profile["total_inputs"] += 1
 
@@ -682,7 +667,7 @@ class GenesisMind:
         elif self.stage == "advanced":
             learning_output = self._learn_advanced(user_input, input_tags, domains)
 
-        if c.coherence < self.config.probing_threshold and self.stage != "infancy":
+        if c.coherence < self.config.probing_threshold:
             probing = self._generate_probing_questions(user_input, domains, background, c)
             self._store_memory(
                 kind="episodic",
@@ -699,21 +684,13 @@ class GenesisMind:
                 "recalled": [asdict(m) for m in deliberation["recalled"]],
                 "learning_output": learning_output,
                 "stage": self.stage,
+                "search_log": self.last_search_log,
             }
 
-        # Generate answer
-        if self.stage == "infancy" and not self._all_early_modules_complete():
-            # infancy responses while still in early-learning phase
-            lines = []
-            lines.append("I am very young. My early-learning modules are not all complete yet.")
-            lines.append("You can help by starting modules on the right, or just telling me simple facts.")
-            lines.append(f"Right now, I noticed these words: {', '.join(input_tags[:5])}.")
-            answer = "\n".join(lines)
-        else:
-            answer = self._generate_answer(user_input, domains, deliberation, style, learning_output)
+        answer = self._generate_answer(user_input, domains, deliberation, style, learning_output)
 
         self._store_memory(
-            kind="semantic" if self.stage != "infancy" else "episodic",
+            kind="semantic",
             content=answer,
             tags=input_tags,
             strength=c.coherence,
@@ -728,6 +705,7 @@ class GenesisMind:
             "recalled": [asdict(m) for m in deliberation["recalled"]],
             "learning_output": learning_output,
             "stage": self.stage,
+            "search_log": self.last_search_log,
         }
 
 
@@ -743,13 +721,11 @@ def init_session():
         st.session_state.history = []
     if "style" not in st.session_state:
         st.session_state.style = "plain"
-    if "module_question" not in st.session_state:
-        st.session_state.module_question = None
 
 
 def main():
     st.set_page_config(
-        page_title="SledAI Developmental Genesis",
+        page_title="SledAI Developmental Genesis (Web-Search Early Learning)",
         page_icon="🧠",
         layout="wide",
     )
@@ -759,38 +735,12 @@ def main():
 
     col_left, col_right = st.columns([2, 1])
 
-    # ---------------- LEFT: Dialogue & modules interaction ----------------
+    # LEFT: Dialogue
     with col_left:
         st.title("SledAI Developmental Genesis")
-        st.caption("A developmental mind that grows from interactive early learning to schooling and advanced knowledge.")
+        st.caption("A developmental mind that auto-learns early knowledge from web search, then goes to school.")
 
         st.markdown(mind.describe_self())
-
-        st.markdown("### Early-learning modules (0–5 simulated years)")
-
-        modules = [
-            ("objects", "Objects & Categories"),
-            ("family", "People & Family"),
-            ("emotions", "Emotions"),
-            ("cause_effect", "Actions & Cause/Effect"),
-            ("safety", "Safety & Rules"),
-            ("stories", "Language & Stories"),
-        ]
-
-        module_cols = st.columns(3)
-        for i, (key, label) in enumerate(modules):
-            col = module_cols[i % 3]
-            with col:
-                done = mind.early_learning_modules.get(key, False)
-                if done:
-                    st.button(f"✓ {label}", disabled=True, key=f"mod_{key}_done")
-                else:
-                    if st.button(f"Start {label}", key=f"mod_{key}_start"):
-                        q = mind.start_early_learning_module(key)
-                        mind.save()
-                        st.session_state.module_question = q
-
-        st.markdown("---")
 
         style = st.radio(
             "How should I shape my explanations?",
@@ -800,44 +750,19 @@ def main():
         )
         st.session_state.style = style
 
-        # If an early-learning module is active, show its current question
-        if mind.active_module and st.session_state.module_question:
-            st.subheader(f"Early-learning module: {mind.active_module}")
-            st.write(st.session_state.module_question)
-            module_answer = st.text_input("Your answer for this question:", key="module_answer")
-            if st.button("Send module answer"):
-                with st.spinner("Processing developmental learning..."):
-                    result = mind.run_early_learning_step(module_answer.strip())
-                    mind.save()
-                st.session_state.history.append(
-                    {
-                        "input": f"[MODULE {mind.active_module}] {module_answer}",
-                        "result": {
-                            "mode": "module",
-                            "info": result,
-                            "coherence": CoherenceState(0,0,0,0),
-                            "background": {},
-                            "recalled": [],
-                            "stage": mind.stage,
-                        },
-                    }
-                )
-                st.session_state.module_question = result.get("next_question")
-                st.experimental_rerun()
-        else:
-            # Normal conversational input
-            user_input = st.text_input("Your input to the mind:", key="user_input")
-            if st.button("Send") and user_input.strip():
-                with st.spinner("Thinking, learning, and recalling..."):
-                    result = mind.process(user_input.strip(), style)
-                    mind.save()
-                st.session_state.history.append({"input": user_input.strip(), "result": result})
+        user_input = st.text_input("Your input to the mind:", key="user_input")
+
+        if st.button("Send") and user_input.strip():
+            with st.spinner("Searching, thinking, and learning..."):
+                result = mind.process(user_input.strip(), style)
+                mind.save()
+            st.session_state.history.append({"input": user_input.strip(), "result": result})
 
         st.markdown("---")
         st.header("Dialogue")
 
         if not st.session_state.history:
-            st.info("No interactions yet. Start a module or say something.")
+            st.info("No interactions yet. Ask something.")
         else:
             for item in reversed(st.session_state.history):
                 st.markdown(f"**You:** {item['input']}")
@@ -848,22 +773,55 @@ def main():
                 if mode == "answer":
                     st.markdown(f"**SledAI ({stage}):**")
                     st.code(result["answer"])
-                elif mode == "probing":
+                else:
                     st.markdown(f"**SledAI ({stage}, probing):**")
                     for q in result["probing_questions"]:
                         st.write("- " + q)
-                elif mode == "module":
-                    info = result["info"]
-                    st.markdown(f"**SledAI (early-learning):**")
-                    st.write(info.get("message", ""))
-                    if info.get("next_question"):
-                        st.write(f"Next question will be: {info['next_question']}")
-                    if info.get("completed"):
-                        st.write(f"Module '{info.get('module')}' is now complete.")
+
+                with st.expander("Internal state (coherence, background, recall, learning, search)", expanded=False):
+                    c: CoherenceState = result["coherence"]
+                    st.write(f"- Stage: `{stage}`")
+                    st.write(f"- Sigma (chaos): `{c.sigma:.3f}`")
+                    st.write(f"- Z (structure): `{c.z:.3f}`")
+                    st.write(f"- Divergence: `{c.divergence:.3f}`")
+                    st.write(f"- Coherence: `{c.coherence:.3f}`")
+
+                    st.write("**Background packets:**")
+                    for d, pkt in result["background"].items():
+                        st.write(f"- **{d.replace('_',' ')}**")
+                        st.write(f"  - Notes: {pkt.notes}")
+                        st.write(f"  - Confidence: `{pkt.confidence:.2f}`, Completeness: `{pkt.completeness:.2f}`")
+
+                    st.write("**Recalled memories used:**")
+                    for m in result.get("recalled", []):
+                        st.write(
+                            f"- [{m['kind']}] strength={m['strength']:.2f} :: {m['content'][:160]}"
+                        )
+
+                    learning_output = result.get("learning_output")
+                    if learning_output:
+                        st.write("**Learning output (schooling/advanced):**")
+                        for key, val in learning_output.items():
+                            if isinstance(val, list):
+                                st.write(f"- {key}:")
+                                for x in val[:3]:
+                                    st.write(f"  - {x[:200]}")
+                            else:
+                                st.write(f"- {key}: {str(val)[:200]}")
+
+                    search_log = result.get("search_log", [])
+                    if search_log:
+                        st.write("**Recent search log:**")
+                        for entry in search_log[:5]:
+                            st.write(
+                                f"- Query: `{entry['query']}` (rank {entry['rank']}) "
+                                f"[context: {entry['context']}]"
+                            )
+                            st.write(f"  Snippet: {entry['snippet']}")
 
                 st.markdown("---")
 
-    # ---------------- RIGHT: Mind overview ----------------
+    # RIGHT: Mind overview
     with col_right:
         st.header("Mind overview")
         st.markdown(mind.describe_self())
