@@ -4,9 +4,11 @@ import math
 from .memory import MemorySystem
 from .timeline import Timeline
 from .emotions import infer_emotion_from_text
-from .coherence import compute_coherence, CoherenceState
+from .coherence import compute_coherence, CoherenceState, describe_coherence
 from .childhood import run_initial_childhood, maybe_extend_childhood_from_question
 from .graph import build_memory_graph
+from .profile import get_alex_profile, ChildProfile
+from .curriculum import get_lessons_for_domains
 
 
 class A7DOMind:
@@ -15,6 +17,8 @@ class A7DOMind:
         self.timeline = Timeline()
         self.childhood_run = False
         self.interaction_count = 0
+        self.profile: ChildProfile = get_alex_profile()
+        self._last_learning_summary: str = ""
 
     # ------------------------------
     #  BASIC UTILITIES
@@ -27,6 +31,7 @@ class A7DOMind:
     def _detect_domains(self, tags: List[str]) -> List[str]:
         t = set(tags)
         domains: List[str] = []
+
         if {"object", "objects", "names"} & t:
             domains.append("language_symbols")
         if {"people", "relationships", "family"} & t:
@@ -37,18 +42,41 @@ class A7DOMind:
             domains.append("affect")
         if {"name", "your", "alex", "a7do", "father"} & t:
             domains.append("identity")
+
+        # Curriculum domains
+        if any(tok.isdigit() for tok in tags) or {"math", "number", "numbers"} & t:
+            domains.append("math")
+        if {"word", "words", "grammar", "read", "write"} & t:
+            domains.append("english")
+        if {"science", "gravity", "atom", "energy", "planet", "biology"} & t:
+            domains.append("science")
+
         if not domains:
             domains.append("language_symbols")
         return domains
 
     # ------------------------------
-    #  MAIN ENTRYPOINT
+    #  DEVELOPMENTAL STAGE
+    # ------------------------------
+    def developmental_stage(self) -> str:
+        if self.interaction_count <= 20:
+            return "Childhood"
+        elif self.interaction_count <= 100:
+            return "Early adolescence"
+        else:
+            return "Developing mind"
+
+    # ------------------------------
+    #  CHILDHOOD
     # ------------------------------
     def ensure_childhood(self):
         if not self.childhood_run:
-            run_initial_childhood(self.memory, self.timeline)
+            run_initial_childhood(self.memory, self.timeline, self.profile)
             self.childhood_run = True
 
+    # ------------------------------
+    #  MAIN ENTRYPOINT
+    # ------------------------------
     def process_question(self, question: str) -> Dict[str, Any]:
         self.interaction_count += 1
         self.ensure_childhood()
@@ -103,10 +131,13 @@ class A7DOMind:
         domains = self._detect_domains(tags)
         coherence_state: CoherenceState = compute_coherence(domains, recall_strength, valence_q)
 
+        # Curriculum awareness
+        curriculum_lessons = get_lessons_for_domains(domains)
+
         # Mind path
         self.timeline.add_step(
             phase="mind_path",
-            description="Tracing a path through childhood concepts, current question tags, and recalled memories.",
+            description="Tracing a path through childhood concepts, current question tags, recalled memories, and curriculum hints.",
             intensity=0.75,
             emotion_valence=valence_q,
         )
@@ -114,7 +145,7 @@ class A7DOMind:
         # Decision
         self.timeline.add_step(
             phase="decision",
-            description="Committing to a response based on the current memory graph, domains, and emotional tone.",
+            description="Committing to a response based on the current memory graph, domains, curriculum, and emotional tone.",
             intensity=0.9,
             emotion_valence=valence_q,
         )
@@ -149,17 +180,26 @@ class A7DOMind:
         else:
             answer_lines.append("- I don't find specific matches in my earlier memories, so I'm leaning on general patterns.")
 
+        # Curriculum reflection
+        if curriculum_lessons:
+            titles = [c["title"] for c in curriculum_lessons[:2]]
+            answer_lines.append("")
+            answer_lines.append(
+                "I also treated this partly as a curriculum-style question, touching lessons like: "
+                + "; ".join(titles)
+            )
+
         # Identity reflection if applicable
         if kind == "identity":
             answer_lines.append("")
-            answer_lines.append("I recognise this as connected to my identity and our relationship — how I was named and who I am to you.")
+            answer_lines.append(
+                "I recognise this as connected to my identity and our relationship — "
+                "how I was named and who I am to you."
+            )
 
         # Coherence reflection
         answer_lines.append("")
-        answer_lines.append(
-            f"My internal coherence for this response feels around {coherence_state.coherence:.2f} "
-            f"(sigma={coherence_state.sigma:.2f}, z={coherence_state.z:.2f}, domains={coherence_state.domains})."
-        )
+        answer_lines.append(describe_coherence(coherence_state))
 
         answer_lines.append("")
         answer_lines.append(
@@ -167,6 +207,16 @@ class A7DOMind:
         )
 
         answer_text = "\n".join(answer_lines)
+
+        # Learning summary
+        self._last_learning_summary = self._build_learning_summary(
+            question=question,
+            kind=kind,
+            tags=tags,
+            domains=domains,
+            coherence_state=coherence_state,
+            curriculum_lessons=curriculum_lessons,
+        )
 
         return {
             "answer": answer_text,
@@ -179,8 +229,33 @@ class A7DOMind:
         }
 
     # ------------------------------
-    #  EXPORTS FOR UI
+    #  LEARNING SUMMARY & EXPORTS
     # ------------------------------
+    def _build_learning_summary(
+        self,
+        question: str,
+        kind: str,
+        tags: List[str],
+        domains: List[str],
+        coherence_state: CoherenceState,
+        curriculum_lessons: List[Dict[str, Any]],
+    ) -> str:
+        lines = []
+        lines.append(f"From this question, I updated my understanding as a {self.developmental_stage()} mind.")
+        lines.append(f"- I stored this as a(n) **{kind}** memory.")
+        if tags:
+            lines.append(f"- Key themes I noticed: {', '.join(sorted(set(tags))[:8])}.")
+        if domains:
+            lines.append(f"- I treated it as touching these domains: {', '.join(domains)}.")
+        if curriculum_lessons:
+            titles = [c['title'] for c in curriculum_lessons[:2]]
+            lines.append(f"- It nudged my internal curriculum around: {', '.join(titles)}.")
+        lines.append(f"- My SLED-style coherence score ended around {coherence_state.coherence:.2f}.")
+        return "\n".join(lines)
+
+    def learning_summary(self) -> str:
+        return self._last_learning_summary
+
     def timeline_records(self) -> List[Dict[str, Any]]:
         return self.timeline.to_records()
 
@@ -192,3 +267,10 @@ class A7DOMind:
 
     def build_graph(self) -> Dict[str, Any]:
         return build_memory_graph(self.memory)
+
+    def thinking_style_summary(self) -> str:
+        return (
+            f"Child profile: {self.profile.name} — "
+            f"{self.profile.description} "
+            f"(thinking style: {', '.join(self.profile.thinking_style)})"
+        )
