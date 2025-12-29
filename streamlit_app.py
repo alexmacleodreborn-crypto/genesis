@@ -150,7 +150,7 @@ class GenesisMind:
             active.append("language_symbols")
         if any(w in q for w in ["country","city","continent","border","map","capital","world"]):
             active.append("geography")
-        if any(w in q for w in ["relationship","friend","family","feel","emotion","empathy","love","dog","people","kind"]):
+        if any(w in q for w in ["relationship","friend","family","feel","emotion","empathy","love","dog","people","kind","son","daughter","brother","sister"]):
             active.append("relationships_empathy")
         if any(w in q for w in ["physics","chemistry","biology","engineering","gravity","entropy","energy","force","atom"]):
             active.append("science_engineering")
@@ -308,20 +308,20 @@ class GenesisMind:
         )
         domain_diversity = sum(1 for c in self.self_profile["domain_counts"].values() if c > 0)
 
-        # simple linear combination (tunable)
+        # more aggressive growth
         score = (
-            total_inputs * 1.0 +
-            num_tags * 0.5 +
-            avg_strength * 20.0 +
-            domain_diversity * 10.0
+            total_inputs * 10.0 +     # each interaction counts more
+            num_tags * 2.0 +          # each new tag counts more
+            avg_strength * 50.0 +     # strong memories push maturity
+            domain_diversity * 20.0
         )
         return score
 
     def _update_stage(self):
         score = self._compute_maturity_score()
-        if score < 100:
+        if score < 80:
             self.stage = "infancy"
-        elif score < 500:
+        elif score < 300:
             self.stage = "schooling"
         else:
             self.stage = "advanced"
@@ -334,15 +334,33 @@ class GenesisMind:
     #  INFANCY LEARNING (0–5)
     # ------------------------------
     def _learn_infancy(self, user_input: str, tags: List[str], domains: List[str]) -> str:
-        # focus on emotions, relationships, concrete objects
         lines = []
         lines.append("I am very young. I am learning basic things about the world from what you say.")
+
+        lower = user_input.lower()
+        family_bits = []
+        if "brother" in lower:
+            family_bits.append("you have a brother")
+        if "sister" in lower or "sisters" in lower:
+            family_bits.append("you have sister(s)")
+        if "son" in lower:
+            family_bits.append("you have a son")
+        if "daughter" in lower:
+            family_bits.append("you have a daughter")
+
+        if family_bits:
+            lines.append("From this, I’m learning simple facts about your family:")
+            for fb in family_bits:
+                lines.append(f"- I now believe {fb}.")
+
         if "relationships_empathy" in domains:
-            lines.append("This tells me something about how beings relate and feel.")
+            lines.append("This helps me build a picture of how people are connected.")
         if "language_symbols" in domains:
             lines.append("I’m also learning new words and names and how they connect.")
+
         if tags:
             lines.append(f"Right now, important new words for me here are: {', '.join(tags[:5])}.")
+
         lines.append("You can help me grow by telling me simple facts about you, your world, and what matters to you.")
         return "\n".join(lines)
 
@@ -361,13 +379,10 @@ class GenesisMind:
         ]
 
     def _learn_schooling(self, user_input: str, tags: List[str], domains: List[str]) -> Dict[str, Any]:
-        # treat input as a subject / question
         snippets = self._search_web(user_input)
-        # very simple filtering: keep all for now, but record tags
         search_text = " ".join(snippets)
         search_tags = self._extract_tags(search_text)
 
-        # store a semantic "lesson"
         lesson = f"Schooling lesson based on: {user_input}\nSnippets:\n" + "\n".join(snippets[:3])
         self._store_memory(
             kind="semantic",
@@ -386,12 +401,10 @@ class GenesisMind:
     #  ADVANCED LEARNING (18+)
     # ------------------------------
     def _learn_advanced(self, user_input: str, tags: List[str], domains: List[str]) -> Dict[str, Any]:
-        # In advanced mode, we could do deeper search + structured synthesis.
         snippets = self._search_web(user_input)
         search_text = " ".join(snippets)
         search_tags = self._extract_tags(search_text)
 
-        # recall related memories and integrate
         recalled = self._recall_memory(tags, k=5)
         synthesis_lines = []
         synthesis_lines.append("Advanced synthesis of your query using what I know and what I can see:")
@@ -505,11 +518,7 @@ class GenesisMind:
 
         lines.append(f"\nFrom your input, I see it mainly touches: {domain_labels}.")
 
-        # Include learning output depending on stage
-        if self.stage == "infancy":
-            # learning_output is None here; infancy handled separately
-            pass
-        elif self.stage == "schooling" and learning_output is not None:
+        if self.stage == "schooling" and learning_output is not None:
             lines.append("\nFrom my schooling-style learning, I gathered:")
             for s in learning_output.get("snippets", [])[:3]:
                 lines.append(f"- {s}")
@@ -517,7 +526,6 @@ class GenesisMind:
             lines.append("\nHere is my current synthesis:")
             lines.append(learning_output.get("synthesis", ""))
 
-        # Recalled memories
         if recalled:
             lines.append("\nI am also remembering related things from before:")
             for m in recalled[:3]:
@@ -578,23 +586,21 @@ class GenesisMind:
         c: CoherenceState = deliberation["coherence"]
         background = deliberation["background"]
 
-        # Stage-specific learning
         learning_output: Optional[Dict[str, Any]] = None
         infancy_comment: Optional[str] = None
 
         if self.stage == "infancy":
             infancy_comment = self._learn_infancy(user_input, input_tags, domains)
-            # store episodic only
             self._store_memory(
                 kind="episodic",
-                content=f"Infancy impression: {user_input}",
+                content=f"Fact learned in infancy: {user_input}",
                 tags=input_tags,
                 strength=c.coherence,
-                meta={"domains": domains},
+                meta={"domains": domains, "stage": "infancy"},
             )
         elif self.stage == "schooling":
             learning_output = self._learn_schooling(user_input, input_tags, domains)
-        else:  # advanced
+        else:
             learning_output = self._learn_advanced(user_input, input_tags, domains)
 
         if c.coherence < self.config.probing_threshold and self.stage != "infancy":
@@ -617,13 +623,11 @@ class GenesisMind:
                 "infancy_comment": infancy_comment,
             }
 
-        # Generate answer
         if self.stage == "infancy":
             answer = infancy_comment or self._learn_infancy(user_input, input_tags, domains)
         else:
             answer = self._generate_answer(user_input, domains, deliberation, style, learning_output)
 
-        # Store memories
         self._store_memory(
             kind="semantic" if self.stage != "infancy" else "episodic",
             content=answer,
@@ -671,7 +675,7 @@ def main():
     col_left, col_right = st.columns([2, 1])
 
     with col_left:
-        st.title("🧠 SledAI Developmental Genesis")
+        st.title("SledAI Developmental Genesis")
         st.caption("A developmental mind that grows from infancy to schooling to advanced knowledge.")
 
         st.markdown(mind.describe_self())
