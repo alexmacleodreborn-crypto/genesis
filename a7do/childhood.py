@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List
 from .emotions import infer_emotion_from_text
 from .memory import MemorySystem
 from .timeline import Timeline
