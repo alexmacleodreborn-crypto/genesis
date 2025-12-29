@@ -3,6 +3,7 @@ import pandas as pd
 import altair as alt
 
 from a7do import A7DOMind
+from streamlit_autorefresh import st_autorefresh
 
 
 def init_session():
@@ -21,8 +22,14 @@ def main():
         layout="wide",
     )
 
+    # Auto-refresh every 5 seconds to drive autonomous development
+    st_autorefresh(interval=5000, key="a7do_autorefresh")
+
     init_session()
     mind: A7DOMind = st.session_state.mind
+
+    # Drive autonomous development even if no questions are asked
+    mind.maybe_auto_develop()
 
     col_left, col_right = st.columns([2, 1])
 
@@ -55,7 +62,7 @@ def main():
         if st.session_state.last_answer:
             st.code(st.session_state.last_answer)
         else:
-            st.info("Ask a question above to hear from A7DO.")
+            st.info("Ask a question above to hear from A7DO. Even if you don't, A7DO is still growing in the background.")
 
         st.markdown("---")
         st.markdown("### What A7DO just learned from this question")
@@ -63,26 +70,26 @@ def main():
         if learning_summary:
             st.markdown(learning_summary)
         else:
-            st.info("Once you ask a question, A7DO will show you what it learned here.")
+            st.info("Once you ask a question, A7DO will show you what it learned here. In the meantime, it is auto-developing its own story.")
 
         st.markdown("---")
-        st.markdown("### A7DO childhood & experience memories (textual summary)")
+        st.markdown("### A7DO childhood, development & experience memories (textual summary)")
         mem_lines = mind.memory_summary_lines()
         if mem_lines:
-            for line in mem_lines:
+            for line in mem_lines[-80:]:  # show latest slice
                 st.write(line)
         else:
-            st.info("No memories yet. As soon as A7DO processes its first question, its childhood will be auto-learned and logged here.")
+            st.info("No memories yet — this should only appear very briefly at first launch.")
 
     # RIGHT: internal timeline + mind-map
     with col_right:
         st.markdown("### A7DO internal timeline")
         records = mind.timeline_records()
         if not records:
-            st.info("No internal activity yet. Ask A7DO a question to see thinking, recall, and mind-pathing.")
+            st.info("No internal activity yet. This should disappear quickly as autonomous development runs.")
         else:
             df = pd.DataFrame(records)
-            for _, row in df.iterrows():
+            for _, row in df.tail(40).iterrows():
                 st.write(
                     f"**Step {int(row['step'])} — {row['phase']}** "
                     f"(intensity {row['intensity']:.2f}, emotion {row['emotion_valence']:+.2f})"
@@ -91,7 +98,7 @@ def main():
                 st.write("")
 
             st.markdown("#### Graphical activity plot")
-            phase_order = ["thinking", "recall", "cross_reference", "mind_path", "decision"]
+            phase_order = ["thinking", "recall", "cross_reference", "mind_path", "decision", "development", "internal_question"]
             df["phase"] = pd.Categorical(df["phase"], categories=phase_order, ordered=True)
 
             chart = (
@@ -123,10 +130,9 @@ def main():
 
             st.caption(
                 "Nodes are memories. Active nodes (used in the last answer) are highlighted in red and larger. "
-                "Edges between active nodes are bold."
+                "Edges between active nodes are bold. Autonomous development continuously adds new nodes."
             )
 
-            # Nodes
             nodes_chart = (
                 alt.Chart(nodes_df)
                 .mark_circle()
@@ -135,12 +141,12 @@ def main():
                     y=alt.Y("y:Q", axis=None),
                     color=alt.condition(
                         alt.datum.active,
-                        alt.value("#ff4b4b"),       # active
-                        alt.Color("kind:N")         # non-active by kind
+                        alt.value("#ff4b4b"),
+                        alt.Color("kind:N")
                     ),
                     size=alt.condition(
                         alt.datum.active,
-                        alt.value(600),             # active = large
+                        alt.value(600),
                         alt.Size(
                             "abs(emotion_valence):Q",
                             title="|Emotion|",
@@ -151,7 +157,6 @@ def main():
                 )
             )
 
-            # Edges
             if not edges_df.empty:
                 edges_df = (
                     edges_df
@@ -173,8 +178,8 @@ def main():
                         y2="y_target:Q",
                         stroke=alt.condition(
                             alt.datum.active,
-                            alt.value("#ff4b4b"),   # active edge
-                            alt.value("#999999")    # normal edge
+                            alt.value("#ff4b4b"),
+                            alt.value("#999999")
                         ),
                         strokeWidth=alt.condition(
                             alt.datum.active,
