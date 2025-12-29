@@ -1,9 +1,7 @@
-from typing import List, Dict, Any
+from typing import List
 from .emotions import infer_emotion_from_text
-from .utils import now_ts
 
 
-# Simple enum-ish phases
 PHASE_BIRTH = 0
 PHASE_CHILDHOOD = 1
 PHASE_EDUCATION = 2
@@ -36,7 +34,7 @@ def _add_dev_memory(
         kind=kind,
         content=content,
         source="auto_development",
-        tags=tags,
+        tags=tags + ["development_phase", phase_label.lower()],
         links=[],
         learned_via=learned_via,
         from_steps=[step_idx],
@@ -88,7 +86,7 @@ def _run_childhood_growth(mind) -> None:
         ),
         (
             "I struggled with noise and chaos but thrived when things were structured and predictable.",
-            ["childhood", "noise", "structure", "predictable", "autistic_like"],
+            ["childhood", "noise", "structure", "predictable", "neurodivergent_like"],
         ),
     ]
     for content, tags in events:
@@ -203,7 +201,13 @@ def _run_internal_questions(mind) -> None:
             kind="inference",
             content=f"Internal question: {q}",
             source="auto_internal_question",
-            tags=["internal_question", "self_reflection", "sandys_law", "sled"],
+            tags=[
+                "internal_question",
+                "self_reflection",
+                "sandys_law",
+                "sled",
+                "identity_question",
+            ],
             links=[],
             learned_via="auto_question",
             from_steps=[step_idx],
@@ -275,5 +279,5 @@ def run_auto_development(mind) -> None:
             emotion_valence=0.3,
         )
     else:
-        # After all phases, we can keep adding internal questions occasionally
+        # After all phases, keep adding questions occasionally
         _run_internal_questions(mind)
