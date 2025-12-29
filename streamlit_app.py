@@ -1,55 +1,11 @@
 import time
-import json
-import os
 from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Any, Optional
 from datetime import datetime
+from typing import List, Dict, Any
 
-import requests
 import streamlit as st
-
-
-# =========================================================
-#  BING WEB SEARCH CONFIG (STREAMLIT SECRETS)
-# =========================================================
-
-BING_API_KEY = st.secrets["BING_API_KEY"]
-BING_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
-
-
-def perform_bing_search(query: str, max_results: int = 5) -> List[str]:
-    """
-    Calls Bing Web Search API and returns a list of snippets.
-    """
-    headers = {
-        "Ocp-Apim-Subscription-Key": BING_API_KEY,
-    }
-    params = {
-        "q": query,
-        "count": max_results,
-        "mkt": "en-US",
-        "safeSearch": "Moderate",
-    }
-
-    try:
-        resp = requests.get(BING_ENDPOINT, headers=headers, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-
-        snippets: List[str] = []
-        web_pages = data.get("webPages", {}).get("value", [])
-        for item in web_pages[:max_results]:
-            snippet = item.get("snippet") or item.get("name") or ""
-            if snippet:
-                snippets.append(snippet)
-
-        if not snippets:
-            return [f"(No snippets returned by Bing for '{query}'.)"]
-
-        return snippets
-
-    except Exception as e:
-        return [f"(Search error for '{query}': {str(e)[:200]})"]
+import pandas as pd
+import altair as alt
 
 
 # =========================================================
@@ -57,416 +13,349 @@ def perform_bing_search(query: str, max_results: int = 5) -> List[str]:
 # =========================================================
 
 @dataclass
-class BackgroundPacket:
-    domain: str
-    notes: List[str] = field(default_factory=list)
-    confidence: float = 0.0
-    completeness: float = 0.0
-
-
-@dataclass
-class CoherenceState:
-    sigma: float
-    z: float
-    divergence: float
-    coherence: float
-
-
-@dataclass
-class GenesisConfig:
-    truth_threshold: float = 0.55
-    probing_threshold: float = 0.6
-    max_iterations: int = 3
-    memory_decay_rate: float = 0.005
-    memory_reinforcement_step: float = 0.03
-    persistence_file: str = "sledai_developmental_state.json"
-
-
-@dataclass
 class MemoryItem:
-    kind: str
-    content: str
-    tags: List[str]
-    strength: float
+    kind: str                  # 'childhood', 'experience', 'inference'
+    content: str               # what was learned
+    source: str                # 'auto_childhood', 'user_question', etc.
+    tags: List[str]            # key concepts
+    links: List[int]           # indices of related memory items
     created_at: float
-    last_reinforced: float
-    meta: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class TimelineStep:
+    step: int
+    phase: str                 # 'thinking', 'recall', 'cross_reference', 'decision', 'mind_path'
+    description: str
+    intensity: float           # 0–1 for visual plotting
+    timestamp: float
 
 
 # =========================================================
-#  GENESIS / SLEDAI DEVELOPMENTAL MIND
+#  A7DO MIND
 # =========================================================
 
-class GenesisMind:
-    """
-    Developmental cognitive engine with:
-    - Automatic early-learning (0–5) using Bing
-    - Logs all early-learning searches
-    - Stages: infancy → schooling → advanced
-    - SLED-style coherence
-    - Episodic + semantic + developmental + search-log memory
-    """
-
-    def __init__(self, config: Optional[GenesisConfig] = None):
-        self.config = config or GenesisConfig()
-        self.age_interactions: int = 0
-
-        self.domains = [
-            "language_symbols",
-            "geography",
-            "relationships_empathy",
-            "science_engineering",
-            "politics_economics",
-            "philosophy",
-            "mathematics",
-            "computing_logic",
-        ]
-
-        self.memory: List[MemoryItem] = []
-        self.self_profile: Dict[str, Any] = {
-            "created_at": datetime.utcnow().isoformat(),
-            "total_inputs": 0,
-            "domain_counts": {d: 0 for d in self.domains},
-            "top_tags": {},
-        }
-
-        self.stage: str = "infancy"
-        self.early_learning_complete: bool = False
-
-        self.last_search_log: List[Dict[str, Any]] = []
-        self.early_learning_log: List[Dict[str, Any]] = []
+class A7DOMind:
+    def __init__(self):
+        self.birth_time = datetime.utcnow().timestamp()
+        self.memories: List[MemoryItem] = []
+        self.timeline: List[TimelineStep] = []
+        self.childhood_completed: bool = False
 
     # ------------------------------
-    #  PERSISTENCE
+    #  BASIC UTILITIES
     # ------------------------------
-    def save(self):
-        data = {
-            "config": asdict(self.config),
-            "age_interactions": self.age_interactions,
-            "memory": [asdict(m) for m in self.memory],
-            "self_profile": self.self_profile,
-            "stage": self.stage,
-            "early_learning_complete": self.early_learning_complete,
-            "last_search_log": self.last_search_log,
-            "early_learning_log": self.early_learning_log,
-        }
-        with open(self.config.persistence_file, "w") as f:
-            json.dump(data, f, indent=2)
+    def _now(self) -> float:
+        return datetime.utcnow().timestamp()
 
-    @classmethod
-    def load(cls, persistence_file: str) -> "GenesisMind":
-        if not os.path.exists(persistence_file):
-            return cls(GenesisConfig(persistence_file=persistence_file))
-        with open(persistence_file, "r") as f:
-            data = json.load(f)
-        cfg = GenesisConfig(**data.get("config", {}))
-        mind = cls(cfg)
-        mind.age_interactions = data.get("age_interactions", 0)
-        mind.memory = [MemoryItem(**m) for m in data.get("memory", [])]
-        mind.self_profile = data.get("self_profile", mind.self_profile)
-        mind.stage = data.get("stage", "infancy")
-        mind.early_learning_complete = data.get("early_learning_complete", False)
-        mind.last_search_log = data.get("last_search_log", [])
-        mind.early_learning_log = data.get("early_learning_log", [])
-        return mind
-
-    # =====================================================
-    #  TAGGING & DOMAIN DETECTION
-    # =====================================================
-
-    def _extract_tags(self, text: str) -> List[str]:
-        words = text.lower().replace(",", " ").replace(".", " ").split()
-        stop = {
-            "the","and","or","of","in","a","an","to","for","is","are","as","on",
-            "that","this","with","you","your","my","have","has","it","they","them",
-            "was","were","from","about","into","over","under","very","just","more",
-            "some","their","there","here","than","then"
-        }
-        tags = [w for w in words if len(w) > 3 and w not in stop]
-
-        for t in tags:
-            self.self_profile["top_tags"][t] = self.self_profile["top_tags"].get(t, 0) + 1
-
-        return tags
-
-    def _detect_domains(self, text: str) -> List[str]:
-        q = text.lower()
-        active: List[str] = []
-
-        if any(w in q for w in ["word","language","symbol","meaning","sentence","name","story"]):
-            active.append("language_symbols")
-        if any(w in q for w in ["country","city","continent","border","map","capital","world"]):
-            active.append("geography")
-        if any(w in q for w in ["relationship","friend","family","feel","emotion","empathy","love","dog","people","kind","son","daughter","brother","sister"]):
-            active.append("relationships_empathy")
-        if any(w in q for w in ["physics","chemistry","biology","engineering","gravity","entropy","energy","force","atom"]):
-            active.append("science_engineering")
-        if any(w in q for w in ["election","policy","government","inflation","market","economy","power"]):
-            active.append("politics_economics")
-        if any(w in q for w in ["meaning of life","ethics","morality","consciousness","free will","soul"]):
-            active.append("philosophy")
-        if any(w in q for w in ["equation","theorem","proof","integral","derivative","probability","number"]):
-            active.append("mathematics")
-        if any(w in q for w in ["algorithm","code","program","logic","boolean","bit","neural","compute","software"]):
-            active.append("computing_logic")
-
-        if not active:
-            active = ["language_symbols"]
-
-        return active
-
-    # =====================================================
-    #  COHERENCE ENGINE
-    # =====================================================
-
-    def _compile_background(self, text: str, domains: List[str]) -> Dict[str, BackgroundPacket]:
-        background: Dict[str, BackgroundPacket] = {}
-        for d in domains:
-            pkt = BackgroundPacket(domain=d)
-            if d == "language_symbols":
-                pkt.notes.append("Interpreting key terms and how you are framing the idea.")
-                pkt.confidence = 0.75
-                pkt.completeness = 0.65
-            elif d == "relationships_empathy":
-                pkt.notes.append("Considering emotional tone and relational context.")
-                pkt.confidence = 0.7
-                pkt.completeness = 0.6
-            elif d == "science_engineering":
-                pkt.notes.append("Mapping to scientific or engineering principles.")
-                pkt.confidence = 0.8
-                pkt.completeness = 0.7
-            elif d == "politics_economics":
-                pkt.notes.append("Contextualising power, incentives, institutions.")
-                pkt.confidence = 0.7
-                pkt.completeness = 0.6
-            elif d == "geography":
-                pkt.notes.append("Locational and spatial context if relevant.")
-                pkt.confidence = 0.65
-                pkt.completeness = 0.55
-            elif d == "philosophy":
-                pkt.notes.append("Conceptual and ethical framing.")
-                pkt.confidence = 0.7
-                pkt.completeness = 0.6
-            elif d == "mathematics":
-                pkt.notes.append("Underlying structural / quantitative patterns.")
-                pkt.confidence = 0.7
-                pkt.completeness = 0.6
-            elif d == "computing_logic":
-                pkt.notes.append("Algorithmic and logical structuring.")
-                pkt.confidence = 0.7
-                pkt.completeness = 0.6
-            background[d] = pkt
-        return background
-
-    def _compute_coherence(self, text: str, background: Dict[str, BackgroundPacket], iteration: int) -> CoherenceState:
-        num_domains = len(background)
-        domain_entropy = 0.3 + 0.15 * (num_domains - 1)
-
-        if background:
-            avg_conf = sum(p.confidence for p in background.values()) / num_domains
-            avg_comp = sum(p.completeness for p in background.values()) / num_domains
-        else:
-            avg_conf = 0.0
-            avg_comp = 0.0
-
-        sigma_base = domain_entropy * (1.2 - 0.2 * avg_comp)
-        sigma = max(0.05, sigma_base * (1.1 - 0.25 * iteration))
-
-        z = min(0.98, 0.3 + 0.4 * avg_conf + 0.1 * iteration)
-
-        divergence = sigma * z
-        coherence = max(0.0, 1.0 - divergence)
-
-        return CoherenceState(
-            sigma=sigma,
-            z=z,
-            divergence=divergence,
-            coherence=coherence,
+    def _add_timeline_step(self, phase: str, description: str, intensity: float):
+        step_idx = len(self.timeline) + 1
+        ts = self._now()
+        self.timeline.append(
+            TimelineStep(
+                step=step_idx,
+                phase=phase,
+                description=description,
+                intensity=max(0.0, min(1.0, intensity)),
+                timestamp=ts,
+            )
         )
 
-    # =====================================================
-    #  MEMORY SYSTEM
-    # =====================================================
-
-    def _decay_memory(self):
-        if not self.memory:
-            return
-        now = datetime.utcnow().timestamp()
-        kept: List[MemoryItem] = []
-        for m in self.memory:
-            dt_min = (now - m.last_reinforced) / 60.0
-            decay_factor = 1.0 - self.config.memory_decay_rate * dt_min
-            m.strength = max(0.0, m.strength * decay_factor)
-            if m.strength > 0.1:
-                kept.append(m)
-        self.memory = kept
-
-    def _store_memory(self, kind: str, content: str, tags: List[str], strength: float, meta: Optional[Dict[str, Any]] = None):
-        now = datetime.utcnow().timestamp()
-        item = MemoryItem(
-            kind=kind,
-            content=content,
-            tags=tags,
-            strength=strength,
-            created_at=now,
-            last_reinforced=now,
-            meta=meta or {},
+    def _add_memory(self, kind: str, content: str, source: str, tags: List[str], links: List[int]):
+        self.memories.append(
+            MemoryItem(
+                kind=kind,
+                content=content,
+                source=source,
+                tags=tags,
+                links=links,
+                created_at=self._now(),
+            )
         )
-        self.memory.append(item)
 
-    def _recall_memory(self, tags: List[str], k: int = 5) -> List[MemoryItem]:
-        if not self.memory or not tags:
+    def _find_related_memories(self, tags: List[str]) -> List[int]:
+        if not tags:
             return []
         tag_set = set(tags)
         scored = []
-        now = datetime.utcnow().timestamp()
-        for m in self.memory:
-            m_tags = set(m.tags)
-            overlap = len(tag_set.intersection(m_tags))
-            if overlap == 0:
-                continue
-            age_min = max(1.0, (now - m.created_at) / 60.0)
-            score = overlap * m.strength / age_min
-            scored.append((score, m))
+        for idx, m in enumerate(self.memories):
+            overlap = len(tag_set.intersection(set(m.tags)))
+            if overlap > 0:
+                scored.append((overlap, idx))
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [m for _, m in scored[:k]]
+        return [idx for _, idx in scored[:5]]
 
-    # =====================================================
-    #  BING SEARCH LOGGING
-    # =====================================================
-
-    def _search_and_log(self, query: str, context: str, for_early_learning: bool = False) -> List[str]:
-        snippets = perform_bing_search(query)
-        now = datetime.utcnow().timestamp()
-
-        log_entries: List[Dict[str, Any]] = []
-        for idx, s in enumerate(snippets):
-            tags = self._extract_tags(s)
-            self._store_memory(
-                kind="search_log",
-                content=s,
-                tags=tags,
-                strength=0.5,
-                meta={"query": query, "context": context, "rank": idx},
-            )
-            entry = {
-                "query": query,
-                "rank": idx,
-                "snippet": s[:250],
-                "context": context,
-                "time": now,
-            }
-            log_entries.append(entry)
-
-        self.last_search_log = log_entries
-        if for_early_learning:
-            self.early_learning_log.extend(log_entries)
-
-        return snippets
-
-    # =====================================================
-    #  EARLY LEARNING (0–5)
-    # =====================================================
-
-    def run_early_learning_if_needed(self):
-        if self.early_learning_complete:
+    # ------------------------------
+    #  AUTO CHILDHOOD LEARNING
+    # ------------------------------
+    def run_childhood_if_needed(self):
+        if self.childhood_completed:
             return
 
-        curriculum = [
-            ("objects_basic", "simple objects for toddlers"),
-            ("animals_basic", "common animals for young children"),
-            ("family_basic", "family member words for kids"),
-            ("emotions_basic", "basic emotions list for children"),
-            ("actions_basic", "simple verbs for kids"),
-            ("safety_basic", "safety rules for young children"),
-            ("stories_basic", "short simple stories for children"),
+        self._add_timeline_step(
+            phase="mind_path",
+            description="Beginning auto-learn childhood: constructing basic world and self concepts.",
+            intensity=0.8,
+        )
+
+        childhood_lessons = [
+            {
+                "content": "Objects have names and properties like colour, size, and shape.",
+                "tags": ["objects", "names", "properties", "colour", "shape"],
+            },
+            {
+                "content": "People can feel emotions such as happiness, sadness, and fear.",
+                "tags": ["people", "emotions", "happiness", "sadness", "fear"],
+            },
+            {
+                "content": "Simple cause and effect: if you drop something, it falls.",
+                "tags": ["cause", "effect", "gravity", "falling"],
+            },
+            {
+                "content": "Stories connect events over time, giving them meaning.",
+                "tags": ["stories", "time", "meaning", "events"],
+            },
+            {
+                "content": "Kindness in relationships makes others feel safer and more open.",
+                "tags": ["kindness", "relationships", "safety", "trust"],
+            },
         ]
 
-        any_valid = False
-
-        for module_name, query in curriculum:
-            snippets = self._search_and_log(query, context=f"early_learning:{module_name}", for_early_learning=True)
-            combined = "\n".join(snippets)
-
-            if all("error" in s.lower() for s in snippets):
-                continue
-
-            tags = self._extract_tags(combined)
-            if not tags:
-                continue
-
-            self._store_memory(
-                kind="developmental",
-                content=f"[EARLY CURRICULUM {module_name}] {combined[:800]}",
-                tags=tags,
-                strength=0.7,
-                meta={"module": module_name, "query": query},
+        for lesson in childhood_lessons:
+            idx_before = len(self.memories)
+            self._add_timeline_step(
+                phase="thinking",
+                description=f"Childhood learning: {lesson['content']}",
+                intensity=0.6,
             )
-            any_valid = True
+            related = self._find_related_memories(lesson["tags"])
+            self._add_memory(
+                kind="childhood",
+                content=lesson["content"],
+                source="auto_childhood",
+                tags=lesson["tags"],
+                links=related,
+            )
+            idx_after = len(self.memories) - 1
+            if related:
+                self._add_timeline_step(
+                    phase="cross_reference",
+                    description=f"Linking childhood memory {idx_after} to previous memories {related}.",
+                    intensity=0.5,
+                )
 
-        if any_valid:
-            self.early_learning_complete = True
-            self.stage = "schooling"
+        self.childhood_completed = True
+        self._add_timeline_step(
+            phase="decision",
+            description="Childhood phase complete. Ready to respond to Alex.",
+            intensity=0.9,
+        )
+
+    # ------------------------------
+    #  PROCESS USER QUESTION
+    # ------------------------------
+    def process_question(self, question: str) -> str:
+        self.run_childhood_if_needed()
+
+        # Thinking: understand intent
+        self._add_timeline_step(
+            phase="thinking",
+            description=f"Receiving Alex's question: '{question}'. Parsing intent and key themes.",
+            intensity=0.7,
+        )
+
+        # Simple tag extraction
+        words = [w.strip(".,!?").lower() for w in question.split()]
+        tags = [w for w in words if len(w) > 3]
+
+        # Recall memories
+        related_indices = self._find_related_memories(tags)
+        if related_indices:
+            self._add_timeline_step(
+                phase="recall",
+                description=f"Recalling {len(related_indices)} related memories using tags: {tags[:6]}.",
+                intensity=0.8,
+            )
         else:
-            self.early_learning_complete = False
-            self.stage = "infancy"
+            self._add_timeline_step(
+                phase="recall",
+                description="No strong direct matches in memory; relying on more general childhood structure.",
+                intensity=0.4,
+            )
 
-    # =====================================================
-    #  SCHOOLING & ADVANCED LEARNING
-    # =====================================================
+        # Cross-reference
+        if related_indices:
+            related_summaries = [self.memories[i].content for i in related_indices[:3]]
+            self._add_timeline_step(
+                phase="cross_reference",
+                description="Cross-referencing recalled memories to form a coherent answer.",
+                intensity=0.7,
+            )
+        else:
+            related_summaries = []
 
-    def _learn_schooling(self, user_input: str, tags: List[str], domains: List[str]) -> Dict[str, Any]:
-        q = f"{user_input} explained for school students"
-        snippets = self._search_and_log(q, context="schooling")
-        combined = "\n".join(snippets)
-        search_tags = self._extract_tags(combined)
-
-        lesson = f"Schooling lesson based on: {user_input}\nSnippets:\n" + "\n".join(snippets[:3])
-        self._store_memory(
-            kind="semantic",
-            content=lesson,
-            tags=tags + search_tags,
-            strength=0.65,
-            meta={"mode": "schooling", "query": q},
+        # Mind-path / high-level mapping
+        self._add_timeline_step(
+            phase="mind_path",
+            description="Tracing a path through childhood concepts, current question tags, and recalled memories.",
+            intensity=0.75,
         )
-        return {
-            "lesson": lesson,
-            "snippets": snippets,
-            "search_tags": search_tags,
-            "query": q,
-        }
 
-    def _learn_advanced(self, user_input: str, tags: List[str], domains: List[str]) -> Dict[str, Any]:
-        q = f"{user_input} detailed explanation"
-        snippets = self._search_and_log(q, context="advanced")
-        combined = "\n".join(snippets)
-        search_tags = self._extract_tags(combined)
+        # Very simple "answer synthesis"
+        answer_lines = []
+        answer_lines.append("Here’s how I’m thinking about your question, Alex:")
+        if tags:
+            answer_lines.append(f"- I detected themes like: {', '.join(sorted(set(tags))[:8])}.")
+        if related_summaries:
+            answer_lines.append("- I’m connecting this to things I learned in my early 'childhood':")
+            for s in related_summaries:
+                answer_lines.append(f"  • {s}")
+        else:
+            answer_lines.append("- I don't find specific matches in my earlier memories, so I'm leaning on general patterns.")
 
-        recalled = self._recall_memory(tags, k=5)
-        synthesis_lines = []
-        synthesis_lines.append("Advanced synthesis of your query using what I know and what I can see:")
-        if recalled:
-            synthesis_lines.append("\nFrom our previous interactions I recall:")
-            for m in recalled[:3]:
-                synthesis_lines.append(f"- ({m.kind}) {m.content[:160]}")
-        synthesis_lines.append("\nFrom external information I see summaries like:")
-        for s in snippets[:3]:
-            synthesis_lines.append(f"- {s}")
-        synthesis = "\n".join(synthesis_lines)
-
-        self._store_memory(
-            kind="semantic",
-            content=synthesis,
-            tags=tags + search_tags,
-            strength=0.75,
-            meta={"mode": "advanced", "query": q},
+        # Decision
+        self._add_timeline_step(
+            phase="decision",
+            description="Committing to a response based on the current memory graph and question.",
+            intensity=0.9,
         )
-        return {
-            "synthesis": synthesis,
-            "snippets": snippets,
-            "search_tags": search_tags,
-            "recalled": recalled,
-            "query": q,
-        }
 
-    # =================================================
+        # Store this interaction as a new experience memory
+        self._add_memory(
+            kind="experience",
+            content=f"Question: {question}",
+            source="user_question",
+            tags=tags,
+            links=related_indices,
+        )
+
+        answer_lines.append("")
+        answer_lines.append("This is a first version of my reasoning. You can refine me by asking follow-up questions or pushing on specifics.")
+
+        return "\n".join(answer_lines)
+
+    # ------------------------------
+    #  EXPORT HELPERS FOR UI
+    # ------------------------------
+    def timeline_as_dataframe(self) -> pd.DataFrame:
+        if not self.timeline:
+            return pd.DataFrame(columns=["step", "phase", "description", "intensity"])
+        return pd.DataFrame([asdict(t) for t in self.timeline])
+
+    def memory_summary(self) -> List[str]:
+        lines = []
+        for idx, m in enumerate(self.memories):
+            kind = m.kind
+            src = m.source
+            tags = ", ".join(m.tags[:5])
+            links = ", ".join(str(i) for i in m.links) if m.links else "none"
+            lines.append(
+                f"[{idx}] kind={kind}, source={src}, tags=[{tags}], links→[{links}]"
+            )
+        return lines
+
+
+# =========================================================
+#  STREAMLIT APP
+# =========================================================
+
+def init_session():
+    if "a7do" not in st.session_state:
+        st.session_state.a7do = A7DOMind()
+    if "last_answer" not in st.session_state:
+        st.session_state.last_answer = ""
+    if "last_question" not in st.session_state:
+        st.session_state.last_question = ""
+
+
+def main():
+    st.set_page_config(
+        page_title="SLED AI — A7DO",
+        page_icon="🧠",
+        layout="wide",
+    )
+
+    init_session()
+    a7do: A7DOMind = st.session_state.a7do
+
+    col_left, col_right = st.columns([2, 1])
+
+    # LEFT: Main interaction
+    with col_left:
+        st.title("SLED AI — A7DO Cognitive Engine")
+        st.markdown("**Welcome, Alex.**")
+
+        st.markdown("### Ask A7DO a question")
+        user_q = st.text_input(
+            "This field is for your questions (not training data).",
+            key="user_question_input",
+        )
+
+        if st.button("Send to A7DO"):
+            if user_q.strip():
+                with st.spinner("A7DO is thinking..."):
+                    answer = a7do.process_question(user_q.strip())
+                st.session_state.last_answer = answer
+                st.session_state.last_question = user_q.strip()
+
+        st.markdown("---")
+        st.markdown("### A7DO responds")
+        if st.session_state.last_answer:
+            st.code(st.session_state.last_answer)
+        else:
+            st.info("Ask a question above to hear from A7DO.")
+
+        st.markdown("---")
+        st.markdown("### A7DO childhood & experience memories (textual summary)")
+        mem_lines = a7do.memory_summary()
+        if mem_lines:
+            for line in mem_lines:
+                st.write(line)
+        else:
+            st.info("No memories yet. As soon as A7DO processes its first question, its childhood will be auto-learned and logged here.")
+
+    # RIGHT: Internal timeline + plots
+    with col_right:
+        st.markdown("### A7DO internal timeline")
+
+        df = a7do.timeline_as_dataframe()
+        if df.empty:
+            st.info("No internal activity yet. Ask A7DO a question to see thinking, recall, and mind-pathing.")
+        else:
+            # Textual timeline
+            for _, row in df.iterrows():
+                st.write(
+                    f"**Step {int(row['step'])} — {row['phase']}** "
+                    f"(intensity {row['intensity']:.2f})"
+                )
+                st.write(f"→ {row['description']}")
+                st.write("")
+
+            st.markdown("#### Graphical activity plot")
+            # Map phase to a categorical order
+            phase_order = ["thinking", "recall", "cross_reference", "mind_path", "decision"]
+            df["phase"] = pd.Categorical(df["phase"], categories=phase_order, ordered=True)
+
+            chart = (
+                alt.Chart(df)
+                .mark_circle(size=120)
+                .encode(
+                    x=alt.X("step:Q", title="Timeline step"),
+                    y=alt.Y("phase:N", title="Cognitive phase"),
+                    color=alt.Color("phase:N", legend=None),
+                    size=alt.Size("intensity:Q", title="Intensity", scale=alt.Scale(range=[50, 400])),
+                    tooltip=["step", "phase", "description", "intensity"],
+                )
+                .properties(height=300)
+            )
+
+            st.altair_chart(chart, use_container_width=True)
+
+        st.markdown("---")
+        if st.button("Reset A7DO (new birth)"):
+            st.session_state.clear()
+            st.experimental_rerun()
+
+
+if __name__ == "__main__":
+    main()
