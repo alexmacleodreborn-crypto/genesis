@@ -74,7 +74,7 @@ def main():
         else:
             st.info("No memories yet. As soon as A7DO processes its first question, its childhood will be auto-learned and logged here.")
 
-    # RIGHT: internal timeline + basic graph info
+    # RIGHT: internal timeline + mind-map
     with col_right:
         st.markdown("### A7DO internal timeline")
         records = mind.timeline_records()
@@ -109,10 +109,69 @@ def main():
             st.altair_chart(chart, use_container_width=True)
 
         st.markdown("---")
-        st.markdown("### A7DO memory graph (structure overview)")
+        st.markdown("### A7DO memory mind-map")
+
         graph = mind.build_graph()
-        st.write(f"Nodes: {len(graph['nodes'])}, Edges: {len(graph['edges'])}")
-        st.caption("We can turn this into a full visual mind-map in a later step.")
+        nodes = graph["nodes"]
+        edges = graph["edges"]
+
+        if not nodes:
+            st.info("No memories yet to display in the mind-map.")
+        else:
+            nodes_df = pd.DataFrame(nodes)
+            if edges:
+                edges_df = pd.DataFrame(edges)
+            else:
+                edges_df = pd.DataFrame(columns=["source", "target"])
+
+            st.caption(
+                "Nodes are memories. Position is abstract (radial), "
+                "colour is kind of memory, size is emotional intensity."
+            )
+
+            nodes_chart = (
+                alt.Chart(nodes_df)
+                .mark_circle()
+                .encode(
+                    x=alt.X("x:Q", title=None, axis=None),
+                    y=alt.Y("y:Q", title=None, axis=None),
+                    color=alt.Color("kind:N", title="Memory kind"),
+                    size=alt.Size(
+                        "abs(emotion_valence):Q",
+                        title="|Emotion|",
+                        scale=alt.Scale(range=[50, 600]),
+                    ),
+                    tooltip=["id", "label", "kind", "emotion_valence"],
+                )
+            )
+
+            if not edges_df.empty:
+                edges_df = (
+                    edges_df
+                    .merge(nodes_df[["id", "x", "y"]], left_on="source", right_on="id")
+                    .rename(columns={"x": "x_source", "y": "y_source"})
+                    .drop(columns=["id"])
+                    .merge(nodes_df[["id", "x", "y"]], left_on="target", right_on="id")
+                    .rename(columns={"x": "x_target", "y": "y_target"})
+                    .drop(columns=["id"])
+                )
+
+                edges_chart = (
+                    alt.Chart(edges_df)
+                    .mark_line(stroke="#999", strokeWidth=1, opacity=0.4)
+                    .encode(
+                        x="x_source:Q",
+                        y="y_source:Q",
+                        x2="x_target:Q",
+                        y2="y_target:Q",
+                    )
+                )
+
+                mindmap_chart = (edges_chart + nodes_chart).properties(height=350)
+            else:
+                mindmap_chart = nodes_chart.properties(height=350)
+
+            st.altair_chart(mindmap_chart, use_container_width=True)
 
         st.markdown("---")
         if st.button("Reset A7DO (new birth)"):
