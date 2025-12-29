@@ -290,4 +290,39 @@ class A7DOMind:
         curriculum_lessons: List[Dict[str, Any]],
     ) -> str:
         lines = []
-       
+        lines.append(f"From this question, I updated my understanding as a {self.developmental_stage()} mind.")
+        lines.append(f"- I stored this as a(n) **{kind}** memory.")
+        if tags:
+            lines.append(f"- Key themes I noticed: {', '.join(sorted(set(tags))[:8])}.")
+        if domains:
+            lines.append(f"- I treated it as touching these domains: {', '.join(domains)}.")
+        if curriculum_lessons:
+            titles = [c['title'] for c in curriculum_lessons[:2]]
+            lines.append(f"- It nudged my internal curriculum around: {', '.join(titles)}.")
+        lines.append(f"- My SLED-style coherence score ended around {coherence_state.coherence:.2f}.")
+        return "\n".join(lines)
+
+    def learning_summary(self) -> str:
+        return self._last_learning_summary
+
+    def timeline_records(self) -> List[Dict[str, Any]]:
+        return self.timeline.to_records()
+
+    def memory_summary_lines(self) -> List[str]:
+        return self.memory.summary_lines()
+
+    def memory_size(self) -> int:
+        return self.memory.size()
+
+    def build_graph(self) -> Dict[str, Any]:
+        return graph_for_visualisation(self.memory, self._last_active_path)
+
+    def thinking_style_summary(self) -> str:
+        return (
+            f"Child profile: {self.profile.name} — "
+            f"{self.profile.description} "
+            f"(thinking style: {', '.join(self.profile.thinking_style)})"
+        )
+
+    def active_path(self) -> List[int]:
+        return self._last_active_path
