@@ -25,9 +25,12 @@ class A7DOMind:
     #  BASIC UTILITIES
     # ------------------------------
     def _extract_tags(self, text: str) -> List[str]:
-        words = [w.strip(".,!?").lower() for w in text.split()]
-        stop = {"the", "and", "or", "of", "in", "a", "an", "to", "for", "is", "are", "as", "on", "that", "this", "with"}
-        return [w for w in words if len(w) > 3 and w not in stop]
+    words = [w.strip(".,!?").lower() for w in text.split()]
+    stop = {"the", "and", "or", "of", "in", "a", "an", "to", "for", "is", "are", "as", "on", "that", "this", "with"}
+    base_words = [w for w in words if len(w) > 2 and w not in stop]
+
+    # NEW: semantic tagging
+    return semantic_tags(base_words)
 
     def _detect_domains(self, tags: List[str]) -> List[str]:
         t = set(tags)
