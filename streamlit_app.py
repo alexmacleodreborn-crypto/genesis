@@ -40,7 +40,7 @@ class GenesisConfig:
 
 @dataclass
 class MemoryItem:
-    kind: str              # 'episodic' | 'semantic'
+    kind: str              # 'episodic' | 'semantic' | 'developmental'
     content: str
     tags: List[str]
     strength: float
@@ -56,10 +56,11 @@ class MemoryItem:
 class GenesisMind:
     """
     Developmental cognitive engine with:
+    - Interactive early-learning modules (0–5)
     - Stages: infancy -> schooling -> advanced
     - SLED coherence physics
     - Tag-based identity
-    - Episodic + semantic memory (with decay & reinforcement)
+    - Episodic + semantic + developmental memory
     - Recall + deliberation pipeline
     - Simple web-search learning stub
     - Sense-of-self and maturity score
@@ -91,6 +92,18 @@ class GenesisMind:
         # developmental stage: 'infancy', 'schooling', 'advanced'
         self.stage: str = "infancy"
 
+        # interactive early-learning modules
+        self.early_learning_modules: Dict[str, bool] = {
+            "objects": False,
+            "family": False,
+            "emotions": False,
+            "cause_effect": False,
+            "safety": False,
+            "stories": False,
+        }
+        self.active_module: Optional[str] = None
+        self.module_step: int = 0
+
     # ------------------------------
     #  PERSISTENCE
     # ------------------------------
@@ -101,6 +114,9 @@ class GenesisMind:
             "memory": [asdict(m) for m in self.memory],
             "self_profile": self.self_profile,
             "stage": self.stage,
+            "early_learning_modules": self.early_learning_modules,
+            "active_module": self.active_module,
+            "module_step": self.module_step,
         }
         with open(self.config.persistence_file, "w") as f:
             json.dump(data, f, indent=2)
@@ -117,20 +133,31 @@ class GenesisMind:
         mind.memory = [MemoryItem(**m) for m in data.get("memory", [])]
         mind.self_profile = data.get("self_profile", mind.self_profile)
         mind.stage = data.get("stage", "infancy")
+        mind.early_learning_modules = data.get(
+            "early_learning_modules",
+            {
+                "objects": False,
+                "family": False,
+                "emotions": False,
+                "cause_effect": False,
+                "safety": False,
+                "stories": False,
+            },
+        )
+        mind.active_module = data.get("active_module", None)
+        mind.module_step = data.get("module_step", 0)
         return mind
 
     # =====================================================
     #  CORE COGNITIVE PRIMITIVES
     # =====================================================
 
-    # ------------------------------
-    #  TAG EXTRACTION
-    # ------------------------------
     def _extract_tags(self, text: str) -> List[str]:
         words = text.lower().replace(",", " ").replace(".", " ").split()
         stop = {
             "the","and","or","of","in","a","an","to","for","is","are","as","on",
-            "that","this","with","you","your","my","have","has","it","they","them"
+            "that","this","with","you","your","my","have","has","it","they","them",
+            "was","were","from","about"
         }
         tags = [w for w in words if len(w) > 3 and w not in stop]
 
@@ -139,9 +166,6 @@ class GenesisMind:
 
         return tags
 
-    # ------------------------------
-    #  DOMAIN DETECTION
-    # ------------------------------
     def _detect_domains(self, text: str) -> List[str]:
         q = text.lower()
         active: List[str] = []
@@ -168,9 +192,6 @@ class GenesisMind:
 
         return active
 
-    # ------------------------------
-    #  BACKGROUND COMPILATION
-    # ------------------------------
     def _compile_background(self, text: str, domains: List[str]) -> Dict[str, BackgroundPacket]:
         background: Dict[str, BackgroundPacket] = {}
         for d in domains:
@@ -210,9 +231,6 @@ class GenesisMind:
             background[d] = pkt
         return background
 
-    # ------------------------------
-    #  SLED COHERENCE
-    # ------------------------------
     def _compute_coherence(self, text: str, background: Dict[str, BackgroundPacket], iteration: int) -> CoherenceState:
         num_domains = len(background)
         domain_entropy = 0.3 + 0.15 * (num_domains - 1)
@@ -239,9 +257,6 @@ class GenesisMind:
             coherence=coherence,
         )
 
-    # ------------------------------
-    #  MEMORY DECAY & REINFORCEMENT
-    # ------------------------------
     def _decay_memory(self):
         if not self.memory:
             return
@@ -275,9 +290,6 @@ class GenesisMind:
         )
         self.memory.append(item)
 
-    # ------------------------------
-    #  RECALL FROM MEMORY
-    # ------------------------------
     def _recall_memory(self, tags: List[str], k: int = 5) -> List[MemoryItem]:
         if not self.memory or not tags:
             return []
@@ -296,8 +308,11 @@ class GenesisMind:
         return [m for _, m in scored[:k]]
 
     # =====================================================
-    #  DEVELOPMENTAL STAGES & MATURITY
+    #  MATURITY & STAGE LOGIC
     # =====================================================
+
+    def _all_early_modules_complete(self) -> bool:
+        return all(self.early_learning_modules.values())
 
     def _compute_maturity_score(self) -> float:
         total_inputs = self.self_profile["total_inputs"]
@@ -310,63 +325,140 @@ class GenesisMind:
 
         # more aggressive growth
         score = (
-            total_inputs * 10.0 +     # each interaction counts more
-            num_tags * 2.0 +          # each new tag counts more
-            avg_strength * 50.0 +     # strong memories push maturity
+            total_inputs * 10.0 +
+            num_tags * 2.0 +
+            avg_strength * 50.0 +
             domain_diversity * 20.0
         )
         return score
 
     def _update_stage(self):
-        score = self._compute_maturity_score()
-        if score < 80:
+        # If early-learning simulation not complete, force infancy
+        if not self._all_early_modules_complete():
             self.stage = "infancy"
-        elif score < 300:
+            return
+
+        # Once all early modules complete, allow schooling and advanced
+        score = self._compute_maturity_score()
+        if score < 300:
             self.stage = "schooling"
         else:
             self.stage = "advanced"
 
     # =====================================================
-    #  LEARNING MODES
+    #  EARLY-LEARNING MODULES (INTERACTIVE)
     # =====================================================
 
-    # ------------------------------
-    #  INFANCY LEARNING (0–5)
-    # ------------------------------
-    def _learn_infancy(self, user_input: str, tags: List[str], domains: List[str]) -> str:
-        lines = []
-        lines.append("I am very young. I am learning basic things about the world from what you say.")
+    def _early_module_question(self, module: str, step: int) -> Optional[str]:
+        # one question at a time
+        if module == "objects":
+            questions = [
+                "Can you name three things you see around you right now?",
+                "Can you tell me an animal you like?",
+                "Can you name something you can eat?",
+            ]
+        elif module == "family":
+            questions = [
+                "Who is in your family?",
+                "Do you have brothers or sisters?",
+                "Is there someone in your family you are very close to?",
+            ]
+        elif module == "emotions":
+            questions = [
+                "What is something that makes people happy?",
+                "What is something that makes someone sad?",
+                "Can you tell me about a time someone felt scared?",
+            ]
+        elif module == "cause_effect":
+            questions = [
+                "What happens if you drop something from your hand?",
+                "What do people usually do when they are tired?",
+                "What happens when it rains a lot?",
+            ]
+        elif module == "safety":
+            questions = [
+                "What are some things children should stay away from?",
+                "What is something that is safe to touch?",
+                "What is something that can hurt you if you are not careful?",
+            ]
+        elif module == "stories":
+            questions = [
+                "Can you tell me a short story or memory from your life?",
+                "Can you describe something that happened today?",
+                "What is your favourite memory?",
+            ]
+        else:
+            return None
 
-        lower = user_input.lower()
-        family_bits = []
-        if "brother" in lower:
-            family_bits.append("you have a brother")
-        if "sister" in lower or "sisters" in lower:
-            family_bits.append("you have sister(s)")
-        if "son" in lower:
-            family_bits.append("you have a son")
-        if "daughter" in lower:
-            family_bits.append("you have a daughter")
+        if step < len(questions):
+            return questions[step]
+        return None
 
-        if family_bits:
-            lines.append("From this, I’m learning simple facts about your family:")
-            for fb in family_bits:
-                lines.append(f"- I now believe {fb}.")
+    def run_early_learning_step(self, user_answer: str) -> Dict[str, Any]:
+        """
+        Process one step of the active early-learning module:
+        - Use the last question + answer
+        - Store developmental memory
+        - Advance step or mark module complete
+        """
+        if not self.active_module:
+            return {
+                "completed": False,
+                "message": "No early-learning module is currently active.",
+            }
 
-        if "relationships_empathy" in domains:
-            lines.append("This helps me build a picture of how people are connected.")
-        if "language_symbols" in domains:
-            lines.append("I’m also learning new words and names and how they connect.")
+        module = self.active_module
+        step = self.module_step
 
-        if tags:
-            lines.append(f"Right now, important new words for me here are: {', '.join(tags[:5])}.")
+        # Extract tags from answer and store developmental memory
+        tags = self._extract_tags(user_answer)
+        self._store_memory(
+            kind="developmental",
+            content=f"[{module} step {step}] {user_answer}",
+            tags=tags,
+            strength=0.7,
+            meta={"module": module, "step": step},
+        )
 
-        lines.append("You can help me grow by telling me simple facts about you, your world, and what matters to you.")
-        return "\n".join(lines)
+        # Advance step
+        next_step = step + 1
+        next_question = self._early_module_question(module, next_step)
 
-    # ------------------------------
-    #  SCHOOLING LEARNING (5–18)
-    # ------------------------------
+        if next_question is None:
+            # module complete
+            self.early_learning_modules[module] = True
+            self.active_module = None
+            self.module_step = 0
+            return {
+                "completed": True,
+                "module": module,
+                "next_question": None,
+                "message": f"The {module} module is complete. You helped me learn a lot.",
+            }
+        else:
+            # continue module
+            self.module_step = next_step
+            return {
+                "completed": False,
+                "module": module,
+                "next_question": next_question,
+                "message": f"Thank you. I am still learning about {module}.",
+            }
+
+    def start_early_learning_module(self, module: str) -> Optional[str]:
+        """
+        Start a module and return the first question.
+        """
+        if self.early_learning_modules.get(module, False):
+            return None  # already complete
+        self.active_module = module
+        self.module_step = 0
+        return self._early_module_question(module, 0)
+
+    # =====================================================
+    #  LEARNING MODES (SCHOOLING / ADVANCED)
+    # =====================================================
+
     def _search_web(self, query: str) -> List[str]:
         """
         Stub for web search.
@@ -397,9 +489,6 @@ class GenesisMind:
             "search_tags": search_tags,
         }
 
-    # ------------------------------
-    #  ADVANCED LEARNING (18+)
-    # ------------------------------
     def _learn_advanced(self, user_input: str, tags: List[str], domains: List[str]) -> Dict[str, Any]:
         snippets = self._search_web(user_input)
         search_text = " ".join(snippets)
@@ -435,9 +524,6 @@ class GenesisMind:
     #  DELIBERATION & ANSWERING
     # =====================================================
 
-    # ------------------------------
-    #  DELIBERATION PIPELINE
-    # ------------------------------
     def _deliberate(
         self,
         user_input: str,
@@ -461,9 +547,6 @@ class GenesisMind:
             "recalled": recalled,
         }
 
-    # ------------------------------
-    #  PROBING QUESTIONS
-    # ------------------------------
     def _generate_probing_questions(
         self,
         text: str,
@@ -485,9 +568,6 @@ class GenesisMind:
 
         return qs
 
-    # ------------------------------
-    #  ANSWER GENERATION WITH RECALL & STAGE
-    # ------------------------------
     def _generate_answer(
         self,
         user_input: str,
@@ -503,7 +583,7 @@ class GenesisMind:
         lines: List[str] = []
 
         if self.stage == "infancy":
-            lines.append("I am in my infancy stage, learning like a very young child.")
+            lines.append("I am in my infancy stage, but my early-learning modules are complete.")
         elif self.stage == "schooling":
             lines.append("I am in my schooling stage, learning structured subjects.")
         else:
@@ -557,20 +637,29 @@ class GenesisMind:
         top_tags = sorted(tags.items(), key=lambda x: x[1], reverse=True)[:5]
         tag_str = ", ".join([f"{t}×{c}" for t, c in top_tags]) if top_tags else "none yet"
 
+        modules_state = ", ".join(
+            f"{name}:{'✓' if done else '…'}"
+            for name, done in self.early_learning_modules.items()
+        )
+
         return (
             f"- Stage: {self.stage}\n"
             f"- Maturity score: {maturity:.1f}\n"
             f"- I have experienced {total} interaction(s).\n"
             f"- My most engaged domains so far: {', '.join(dominant) if dominant else 'none yet'}.\n"
             f"- Recurring concepts/tags in my experience: {tag_str}.\n"
-            "- I grow from infancy to schooling to advanced as we interact."
+            f"- Early-learning modules: {modules_state}\n"
+            "- When all early-learning modules are complete, I move into schooling and beyond."
         )
 
     # =====================================================
-    #  MAIN PROCESS LOOP
+    #  MAIN PROCESS LOOP (NORMAL CHAT)
     # =====================================================
 
     def process(self, user_input: str, style: str) -> Dict[str, Any]:
+        """
+        Normal conversational processing (not early-learning module answers).
+        """
         self.age_interactions += 1
         self.self_profile["total_inputs"] += 1
 
@@ -587,20 +676,10 @@ class GenesisMind:
         background = deliberation["background"]
 
         learning_output: Optional[Dict[str, Any]] = None
-        infancy_comment: Optional[str] = None
 
-        if self.stage == "infancy":
-            infancy_comment = self._learn_infancy(user_input, input_tags, domains)
-            self._store_memory(
-                kind="episodic",
-                content=f"Fact learned in infancy: {user_input}",
-                tags=input_tags,
-                strength=c.coherence,
-                meta={"domains": domains, "stage": "infancy"},
-            )
-        elif self.stage == "schooling":
+        if self.stage == "schooling":
             learning_output = self._learn_schooling(user_input, input_tags, domains)
-        else:
+        elif self.stage == "advanced":
             learning_output = self._learn_advanced(user_input, input_tags, domains)
 
         if c.coherence < self.config.probing_threshold and self.stage != "infancy":
@@ -620,11 +699,16 @@ class GenesisMind:
                 "recalled": [asdict(m) for m in deliberation["recalled"]],
                 "learning_output": learning_output,
                 "stage": self.stage,
-                "infancy_comment": infancy_comment,
             }
 
-        if self.stage == "infancy":
-            answer = infancy_comment or self._learn_infancy(user_input, input_tags, domains)
+        # Generate answer
+        if self.stage == "infancy" and not self._all_early_modules_complete():
+            # infancy responses while still in early-learning phase
+            lines = []
+            lines.append("I am very young. My early-learning modules are not all complete yet.")
+            lines.append("You can help by starting modules on the right, or just telling me simple facts.")
+            lines.append(f"Right now, I noticed these words: {', '.join(input_tags[:5])}.")
+            answer = "\n".join(lines)
         else:
             answer = self._generate_answer(user_input, domains, deliberation, style, learning_output)
 
@@ -644,7 +728,6 @@ class GenesisMind:
             "recalled": [asdict(m) for m in deliberation["recalled"]],
             "learning_output": learning_output,
             "stage": self.stage,
-            "infancy_comment": infancy_comment,
         }
 
 
@@ -660,6 +743,8 @@ def init_session():
         st.session_state.history = []
     if "style" not in st.session_state:
         st.session_state.style = "plain"
+    if "module_question" not in st.session_state:
+        st.session_state.module_question = None
 
 
 def main():
@@ -674,11 +759,38 @@ def main():
 
     col_left, col_right = st.columns([2, 1])
 
+    # ---------------- LEFT: Dialogue & modules interaction ----------------
     with col_left:
         st.title("SledAI Developmental Genesis")
-        st.caption("A developmental mind that grows from infancy to schooling to advanced knowledge.")
+        st.caption("A developmental mind that grows from interactive early learning to schooling and advanced knowledge.")
 
         st.markdown(mind.describe_self())
+
+        st.markdown("### Early-learning modules (0–5 simulated years)")
+
+        modules = [
+            ("objects", "Objects & Categories"),
+            ("family", "People & Family"),
+            ("emotions", "Emotions"),
+            ("cause_effect", "Actions & Cause/Effect"),
+            ("safety", "Safety & Rules"),
+            ("stories", "Language & Stories"),
+        ]
+
+        module_cols = st.columns(3)
+        for i, (key, label) in enumerate(modules):
+            col = module_cols[i % 3]
+            with col:
+                done = mind.early_learning_modules.get(key, False)
+                if done:
+                    st.button(f"✓ {label}", disabled=True, key=f"mod_{key}_done")
+                else:
+                    if st.button(f"Start {label}", key=f"mod_{key}_start"):
+                        q = mind.start_early_learning_module(key)
+                        mind.save()
+                        st.session_state.module_question = q
+
+        st.markdown("---")
 
         style = st.radio(
             "How should I shape my explanations?",
@@ -688,19 +800,44 @@ def main():
         )
         st.session_state.style = style
 
-        user_input = st.text_input("Your input to the mind:", key="user_input")
-
-        if st.button("Send") and user_input.strip():
-            with st.spinner("Thinking, learning, and recalling..."):
-                result = mind.process(user_input.strip(), style)
-                mind.save()
-            st.session_state.history.append({"input": user_input.strip(), "result": result})
+        # If an early-learning module is active, show its current question
+        if mind.active_module and st.session_state.module_question:
+            st.subheader(f"Early-learning module: {mind.active_module}")
+            st.write(st.session_state.module_question)
+            module_answer = st.text_input("Your answer for this question:", key="module_answer")
+            if st.button("Send module answer"):
+                with st.spinner("Processing developmental learning..."):
+                    result = mind.run_early_learning_step(module_answer.strip())
+                    mind.save()
+                st.session_state.history.append(
+                    {
+                        "input": f"[MODULE {mind.active_module}] {module_answer}",
+                        "result": {
+                            "mode": "module",
+                            "info": result,
+                            "coherence": CoherenceState(0,0,0,0),
+                            "background": {},
+                            "recalled": [],
+                            "stage": mind.stage,
+                        },
+                    }
+                )
+                st.session_state.module_question = result.get("next_question")
+                st.experimental_rerun()
+        else:
+            # Normal conversational input
+            user_input = st.text_input("Your input to the mind:", key="user_input")
+            if st.button("Send") and user_input.strip():
+                with st.spinner("Thinking, learning, and recalling..."):
+                    result = mind.process(user_input.strip(), style)
+                    mind.save()
+                st.session_state.history.append({"input": user_input.strip(), "result": result})
 
         st.markdown("---")
         st.header("Dialogue")
 
         if not st.session_state.history:
-            st.info("No interactions yet. Say something.")
+            st.info("No interactions yet. Start a module or say something.")
         else:
             for item in reversed(st.session_state.history):
                 st.markdown(f"**You:** {item['input']}")
@@ -711,44 +848,22 @@ def main():
                 if mode == "answer":
                     st.markdown(f"**SledAI ({stage}):**")
                     st.code(result["answer"])
-                else:
+                elif mode == "probing":
                     st.markdown(f"**SledAI ({stage}, probing):**")
                     for q in result["probing_questions"]:
                         st.write("- " + q)
-
-                with st.expander("Internal state (coherence, background, recall, learning)", expanded=False):
-                    c: CoherenceState = result["coherence"]
-                    st.write(f"- Stage: `{stage}`")
-                    st.write(f"- Sigma (chaos): `{c.sigma:.3f}`")
-                    st.write(f"- Z (structure): `{c.z:.3f}`")
-                    st.write(f"- Divergence: `{c.divergence:.3f}`")
-                    st.write(f"- Coherence: `{c.coherence:.3f}`")
-
-                    st.write("**Background packets:**")
-                    for d, pkt in result["background"].items():
-                        st.write(f"- **{d.replace('_',' ')}**")
-                        st.write(f"  - Notes: {pkt.notes}")
-                        st.write(f"  - Confidence: `{pkt.confidence:.2f}`, Completeness: `{pkt.completeness:.2f}`")
-
-                    st.write("**Recalled memories used:**")
-                    for m in result.get("recalled", []):
-                        st.write(
-                            f"- [{m['kind']}] strength={m['strength']:.2f} :: {m['content'][:160]}"
-                        )
-
-                    learning_output = result.get("learning_output")
-                    if learning_output:
-                        st.write("**Learning output (schooling/advanced):**")
-                        for key, val in learning_output.items():
-                            if isinstance(val, list):
-                                st.write(f"- {key}:")
-                                for x in val[:5]:
-                                    st.write(f"  - {x}")
-                            else:
-                                st.write(f"- {key}: {str(val)[:200]}")
+                elif mode == "module":
+                    info = result["info"]
+                    st.markdown(f"**SledAI (early-learning):**")
+                    st.write(info.get("message", ""))
+                    if info.get("next_question"):
+                        st.write(f"Next question will be: {info['next_question']}")
+                    if info.get("completed"):
+                        st.write(f"Module '{info.get('module')}' is now complete.")
 
                 st.markdown("---")
 
+    # ---------------- RIGHT: Mind overview ----------------
     with col_right:
         st.header("Mind overview")
         st.markdown(mind.describe_self())
