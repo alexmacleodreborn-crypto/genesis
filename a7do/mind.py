@@ -9,6 +9,7 @@ from .childhood import run_initial_childhood, maybe_extend_childhood_from_questi
 from .graph import graph_for_visualisation
 from .profile import get_alex_profile, ChildProfile
 from .curriculum import get_lessons_for_domains
+from .semantics import semantic_tags
 
 
 class A7DOMind:
