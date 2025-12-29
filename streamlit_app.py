@@ -10,63 +10,55 @@ import streamlit as st
 
 
 # =========================================================
-#  CONFIGURE WEB SEARCH BACKEND HERE
+#  BING WEB SEARCH CONFIG
 # =========================================================
 
-# Replace this with your real search endpoint and key.
-# Expectation: GET or POST returns JSON with a field containing result texts/snippets.
-SEARCH_API_ENDPOINT = "https://your-search-endpoint.example.com/search"
-SEARCH_API_KEY = os.getenv("SEARCH_API_KEY", "YOUR_API_KEY_HERE")
+# Either:
+#   1) Set an environment variable: BING_API_KEY=...
+#   2) Or replace "PLACEHOLDER_KEY" with your key in a local copy (do not commit it).
+BING_API_KEY = "781342f8bdd3a318635db0b7c6c69b8ee047ef335b2a278651c8489621b837d9"
 
 
-def perform_web_search(query: str, max_results: int = 5) -> List[str]:
+# Bing Web Search v7 endpoint (global)
+BING_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
+
+
+def perform_bing_search(query: str, max_results: int = 5) -> List[str]:
     """
-    Generic web search wrapper.
-    You must adapt this to your actual search API.
-    It should return a list of short text snippets relevant to the query.
+    Calls Bing Web Search API and returns a list of snippets.
     """
+    if not BING_API_KEY or BING_API_KEY == "PLACEHOLDER_KEY":
+        return [f"(Bing API key not set. Cannot search for '{query}'.)"]
+
+    headers = {
+        "Ocp-Apim-Subscription-Key": BING_API_KEY,
+    }
+    params = {
+        "q": query,
+        "count": max_results,
+        "textDecorations": False,
+        "textFormat": "Raw",
+    }
+
     try:
-        # Example assumes a GET API like:
-        #   /search?q=...&key=...
-        # and returns JSON: { "results": [ {"snippet": "..."} , ... ] }
-        params = {
-            "q": query,
-            "key": SEARCH_API_KEY,
-            "num": max_results,
-        }
-        resp = requests.get(SEARCH_API_ENDPOINT, params=params, timeout=10)
+        resp = requests.get(BING_ENDPOINT, headers=headers, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
 
-        # Adjust this extraction according to your API's schema.
-        snippets = []
-        if isinstance(data, dict):
-            results = data.get("results") or data.get("items") or []
-            for item in results[:max_results]:
-                snippet = (
-                    item.get("snippet")
-                    or item.get("description")
-                    or item.get("title")
-                    or ""
-                )
-                if snippet:
-                    snippets.append(snippet)
-        elif isinstance(data, list):
-            for item in data[:max_results]:
-                if isinstance(item, str):
-                    snippets.append(item)
-                elif isinstance(item, dict):
-                    snippet = item.get("snippet") or item.get("text") or ""
-                    if snippet:
-                        snippets.append(snippet)
+        snippets: List[str] = []
+        web_pages = data.get("webPages", {}).get("value", [])
+        for item in web_pages[:max_results]:
+            snippet = item.get("snippet") or item.get("name") or ""
+            if snippet:
+                snippets.append(snippet)
 
         if not snippets:
-            snippets = [f"(No structured snippets returned for query: {query})"]
+            snippets = [f"(No snippets returned by Bing for '{query}'.)"]
 
         return snippets
 
-    except Exception as e:
-        # Fallback: return a stub with error context but not the raw error text
+    except Exception:
+        # Safe fallback
         return [f"(Search error for '{query}'. Using placeholder text instead.)"]
 
 
@@ -118,15 +110,13 @@ class MemoryItem:
 class GenesisMind:
     """
     Developmental cognitive engine with:
-    - Automatic early-learning (0–5) using web search
-    - Records all early-learning searches
+    - Automatic early-learning (0–5) using Bing web search
+    - Logs all early-learning searches and snippets
     - Stages: infancy -> schooling -> advanced
-    - SLED coherence physics
+    - SLED-style coherence
     - Tag-based identity
     - Episodic + semantic + developmental + search-log memory
-    - Recall + deliberation pipeline
-    - Web search learning in schooling & advanced stages
-    - Sense-of-self and maturity score
+    - Schooling/advanced learning via Bing
     """
 
     def __init__(self, config: Optional[GenesisConfig] = None):
@@ -152,14 +142,12 @@ class GenesisMind:
             "top_tags": {},
         }
 
-        # developmental stage: 'infancy', 'schooling', 'advanced'
         self.stage: str = "infancy"
-
-        # has the automatic early-learning curriculum been completed?
         self.early_learning_complete: bool = False
 
-        # last searches used (for display)
+        # For UI
         self.last_search_log: List[Dict[str, Any]] = []
+        self.early_learning_log: List[Dict[str, Any]] = []
 
     # ------------------------------
     #  PERSISTENCE
@@ -173,6 +161,7 @@ class GenesisMind:
             "stage": self.stage,
             "early_learning_complete": self.early_learning_complete,
             "last_search_log": self.last_search_log,
+            "early_learning_log": self.early_learning_log,
         }
         with open(self.config.persistence_file, "w") as f:
             json.dump(data, f, indent=2)
@@ -191,6 +180,7 @@ class GenesisMind:
         mind.stage = data.get("stage", "infancy")
         mind.early_learning_complete = data.get("early_learning_complete", False)
         mind.last_search_log = data.get("last_search_log", [])
+        mind.early_learning_log = data.get("early_learning_log", [])
         return mind
 
     # =====================================================
@@ -202,7 +192,8 @@ class GenesisMind:
         stop = {
             "the","and","or","of","in","a","an","to","for","is","are","as","on",
             "that","this","with","you","your","my","have","has","it","they","them",
-            "was","were","from","about","into","over","under","very","just"
+            "was","were","from","about","into","over","under","very","just","more",
+            "some","their","there","here","than","then"
         }
         tags = [w for w in words if len(w) > 3 and w not in stop]
 
@@ -385,14 +376,14 @@ class GenesisMind:
             self.stage = "advanced"
 
     # =====================================================
-    #  WEB SEARCH WRAPPER WITH LOGGING
+    #  BING SEARCH WITH LOGGING
     # =====================================================
 
-    def _search_and_log(self, query: str, context: str) -> List[str]:
-        snippets = perform_web_search(query)
-        self.last_search_log = []
+    def _search_and_log(self, query: str, context: str, for_early_learning: bool = False) -> List[str]:
+        snippets = perform_bing_search(query)
         now = datetime.utcnow().timestamp()
 
+        log_entries: List[Dict[str, Any]] = []
         for idx, s in enumerate(snippets):
             tags = self._extract_tags(s)
             self._store_memory(
@@ -402,25 +393,29 @@ class GenesisMind:
                 strength=0.5,
                 meta={"query": query, "context": context, "rank": idx},
             )
-            self.last_search_log.append(
-                {
-                    "query": query,
-                    "rank": idx,
-                    "snippet": s[:200],
-                    "context": context,
-                }
-            )
+            entry = {
+                "query": query,
+                "rank": idx,
+                "snippet": s[:250],
+                "context": context,
+                "time": now,
+            }
+            log_entries.append(entry)
+
+        self.last_search_log = log_entries
+        if for_early_learning:
+            self.early_learning_log.extend(log_entries)
 
         return snippets
 
     # =====================================================
-    #  AUTOMATIC EARLY-LEARNING (0–5) USING WEB SEARCH
+    #  AUTOMATIC EARLY-LEARNING (0–5) USING BING
     # =====================================================
 
     def run_early_learning_if_needed(self):
         """
-        Automatically runs a small curriculum of web-search-based early learning
-        if it has not yet been completed.
+        Automatically runs a small curriculum of Bing-based early learning
+        if it has not yet been completed. Logs everything.
         """
         if self.early_learning_complete:
             return
@@ -428,34 +423,51 @@ class GenesisMind:
         curriculum = [
             ("objects_basic", "simple objects for toddlers"),
             ("animals_basic", "common animals for young children"),
-            ("family_basic", "family members words for kids"),
+            ("family_basic", "family member words for kids"),
             ("emotions_basic", "basic emotions list for children"),
             ("actions_basic", "simple verbs for kids"),
             ("safety_basic", "safety rules for young children"),
             ("stories_basic", "short simple stories for children"),
         ]
 
+        any_valid = False
+
         for module_name, query in curriculum:
-            snippets = self._search_and_log(query, context=f"early_learning:{module_name}")
+            snippets = self._search_and_log(query, context=f"early_learning:{module_name}", for_early_learning=True)
             combined = "\n".join(snippets)
+
+            # Treat obvious error-only responses as invalid
+            if all("error" in s.lower() or "not set" in s.lower() for s in snippets):
+                continue
+
             tags = self._extract_tags(combined)
+            if not tags:
+                continue
+
             self._store_memory(
                 kind="developmental",
-                content=f"[EARLY CURRICULUM {module_name}] {combined[:500]}",
+                content=f"[EARLY CURRICULUM {module_name}] {combined[:800]}",
                 tags=tags,
                 strength=0.7,
                 meta={"module": module_name, "query": query},
             )
+            any_valid = True
 
-        self.early_learning_complete = True
-        self.stage = "schooling"
+        # Only mark complete if at least something meaningful was learned
+        if any_valid:
+            self.early_learning_complete = True
+            self.stage = "schooling"
+        else:
+            # Keep stage as infancy; try again next time
+            self.early_learning_complete = False
+            self.stage = "infancy"
 
     # =====================================================
     #  SCHOOLING & ADVANCED LEARNING
     # =====================================================
 
     def _learn_schooling(self, user_input: str, tags: List[str], domains: List[str]) -> Dict[str, Any]:
-        q = f"{user_input} for school students"
+        q = f"{user_input} explained for school students"
         snippets = self._search_and_log(q, context="schooling")
         combined = "\n".join(snippets)
         search_tags = self._extract_tags(combined)
@@ -725,7 +737,7 @@ def init_session():
 
 def main():
     st.set_page_config(
-        page_title="SledAI Developmental Genesis (Web-Search Early Learning)",
+        page_title="SledAI Developmental Genesis (Bing Early Learning)",
         page_icon="🧠",
         layout="wide",
     )
@@ -738,7 +750,7 @@ def main():
     # LEFT: Dialogue
     with col_left:
         st.title("SledAI Developmental Genesis")
-        st.caption("A developmental mind that auto-learns early knowledge from web search, then goes to school.")
+        st.caption("A developmental mind that auto-learns early knowledge from Bing, then goes to school.")
 
         st.markdown(mind.describe_self())
 
@@ -821,10 +833,21 @@ def main():
 
                 st.markdown("---")
 
-    # RIGHT: Mind overview
+    # RIGHT: Mind overview + early-learning log
     with col_right:
         st.header("Mind overview")
         st.markdown(mind.describe_self())
+
+        st.header("Early-learning log")
+        if not mind.early_learning_log:
+            st.info("Early-learning has not yet run or produced valid snippets.")
+        else:
+            for entry in mind.early_learning_log[:20]:
+                st.write(
+                    f"- [{entry['context']}] Query: `{entry['query']}` "
+                    f"(rank {entry['rank']})"
+                )
+                st.write(f"  Snippet: {entry['snippet']}")
 
         if st.button("Reset mind (new birth)"):
             cfg = mind.config
