@@ -119,32 +119,39 @@ def main():
             st.info("No memories yet to display in the mind-map.")
         else:
             nodes_df = pd.DataFrame(nodes)
-            if edges:
-                edges_df = pd.DataFrame(edges)
-            else:
-                edges_df = pd.DataFrame(columns=["source", "target"])
+            edges_df = pd.DataFrame(edges) if edges else pd.DataFrame(columns=["source", "target"])
 
             st.caption(
-                "Nodes are memories. Position is abstract (radial), "
-                "colour is kind of memory, size is emotional intensity."
+                "Nodes are memories. Active nodes (used in the last answer) are highlighted in red and larger. "
+                "Edges between active nodes are bold."
             )
 
+            # Nodes
             nodes_chart = (
                 alt.Chart(nodes_df)
                 .mark_circle()
                 .encode(
-                    x=alt.X("x:Q", title=None, axis=None),
-                    y=alt.Y("y:Q", title=None, axis=None),
-                    color=alt.Color("kind:N", title="Memory kind"),
-                    size=alt.Size(
-                        "abs(emotion_valence):Q",
-                        title="|Emotion|",
-                        scale=alt.Scale(range=[50, 600]),
+                    x=alt.X("x:Q", axis=None),
+                    y=alt.Y("y:Q", axis=None),
+                    color=alt.condition(
+                        alt.datum.active,
+                        alt.value("#ff4b4b"),       # active
+                        alt.Color("kind:N")         # non-active by kind
                     ),
-                    tooltip=["id", "label", "kind", "emotion_valence"],
+                    size=alt.condition(
+                        alt.datum.active,
+                        alt.value(600),             # active = large
+                        alt.Size(
+                            "abs(emotion_valence):Q",
+                            title="|Emotion|",
+                            scale=alt.Scale(range=[50, 300])
+                        ),
+                    ),
+                    tooltip=["id", "label", "kind", "emotion_valence", "active"],
                 )
             )
 
+            # Edges
             if not edges_df.empty:
                 edges_df = (
                     edges_df
@@ -158,12 +165,27 @@ def main():
 
                 edges_chart = (
                     alt.Chart(edges_df)
-                    .mark_line(stroke="#999", strokeWidth=1, opacity=0.4)
+                    .mark_line()
                     .encode(
                         x="x_source:Q",
                         y="y_source:Q",
                         x2="x_target:Q",
                         y2="y_target:Q",
+                        stroke=alt.condition(
+                            alt.datum.active,
+                            alt.value("#ff4b4b"),   # active edge
+                            alt.value("#999999")    # normal edge
+                        ),
+                        strokeWidth=alt.condition(
+                            alt.datum.active,
+                            alt.value(3),
+                            alt.value(1)
+                        ),
+                        opacity=alt.condition(
+                            alt.datum.active,
+                            alt.value(1.0),
+                            alt.value(0.3)
+                        ),
                     )
                 )
 
