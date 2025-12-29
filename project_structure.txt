@@ -11,6 +11,9 @@ your-repo/
 │   ├── timeline.py
 │   ├── childhood.py
 │   ├── graph.py
-│   └── utils.py
+│   ├── utils.py
+│   ├── profile.py
+│   ├── knowledge_base.py
+│   └── curriculum.py
 │
 └── requirements.txt
