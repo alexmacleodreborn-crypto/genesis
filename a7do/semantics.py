@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple
+from typing import List, Dict
 
 
 # ------------------------------------------------------------
@@ -6,12 +6,11 @@ from typing import List, Dict, Tuple
 # ------------------------------------------------------------
 HOMOPHONE_GROUPS = [
     {"break", "brake"},
-    {"arm"},  # body part vs weapon
+    {"arm"},  # body part vs weapon context
     {"fall"},  # season vs action
 ]
 
-# Map each word to its group
-HOMOPHONE_MAP = {}
+HOMOPHONE_MAP: Dict[str, set] = {}
 for group in HOMOPHONE_GROUPS:
     for w in group:
         HOMOPHONE_MAP[w] = group
@@ -42,7 +41,6 @@ def disambiguate(word: str, context: List[str]) -> str:
     """
     w = word.lower()
 
-    # If not ambiguous, return as-is
     if w not in HOMOPHONE_MAP:
         return w
 
@@ -54,7 +52,6 @@ def disambiguate(word: str, context: List[str]) -> str:
     if any(c in context for c in ["car", "engine", "wheel", "gear", "mechanical"]):
         return f"{w}_mechanical"
 
-    # Default: return base word
     return w
 
 
@@ -69,8 +66,11 @@ def semantic_expand(word: str) -> List[str]:
     """
     tags = [word]
 
+    # Strip sense suffix (e.g. break_injury -> break) for cluster lookup
+    base = word.split("_")[0]
+
     for cluster_name, cluster_words in SEMANTIC_CLUSTERS.items():
-        if word in cluster_words:
+        if base in cluster_words or word in cluster_words:
             tags.append(cluster_name)
 
     return tags
@@ -86,12 +86,11 @@ def semantic_tags(words: List[str]) -> List[str]:
     - semantic cluster tags
     """
     context = set(words)
-    final_tags = []
+    final_tags: List[str] = []
 
     for w in words:
-        sense = disambiguate(w, context)
+        sense = disambiguate(w, list(context))
         expanded = semantic_expand(sense)
         final_tags.extend(expanded)
 
-    # Deduplicate
     return list(sorted(set(final_tags)))
