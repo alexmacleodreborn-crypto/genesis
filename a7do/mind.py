@@ -10,6 +10,8 @@ from .graph import graph_for_visualisation
 from .profile import get_alex_profile, ChildProfile
 from .curriculum import get_lessons_for_domains
 from .semantics import semantic_tags
+from .development import run_auto_development
+from .utils import now_ts
 
 
 class A7DOMind:
@@ -22,6 +24,11 @@ class A7DOMind:
         self._last_learning_summary: str = ""
         self._last_active_path: List[int] = []
 
+        # Autonomous development
+        self._dev_phase: int = 0
+        self._last_auto_dev_time: float = 0.0
+        self._auto_dev_interval: float = 5.0  # seconds
+
     # ------------------------------
     #  BASIC UTILITIES
     # ------------------------------
@@ -32,8 +39,6 @@ class A7DOMind:
             "for", "is", "are", "as", "on", "that", "this", "with",
         }
         base_words = [w for w in words if len(w) > 2 and w not in stop]
-
-        # Semantic tagging
         return semantic_tags(base_words)
 
     def _detect_domains(self, tags: List[str]) -> List[str]:
@@ -66,12 +71,19 @@ class A7DOMind:
     #  DEVELOPMENTAL STAGE
     # ------------------------------
     def developmental_stage(self) -> str:
-        if self.interaction_count <= 20:
-            return "Childhood"
-        elif self.interaction_count <= 100:
-            return "Early adolescence"
+        # Blend interaction-based and development-phase-based sense of age
+        if self._dev_phase == 0:
+            return "Pre-birth bootstrapping"
+        elif self._dev_phase == 1:
+            return "Birth & early childhood"
+        elif self._dev_phase == 2:
+            return "Structured education"
+        elif self._dev_phase == 3:
+            return "Adolescent synthesis"
+        elif self._dev_phase == 4:
+            return "Scientific adulthood"
         else:
-            return "Developing mind"
+            return "Ongoing self-questioning"
 
     # ------------------------------
     #  CHILDHOOD
@@ -82,9 +94,32 @@ class A7DOMind:
             self.childhood_run = True
 
     # ------------------------------
+    #  AUTONOMOUS DEVELOPMENT
+    # ------------------------------
+    def maybe_auto_develop(self):
+        """
+        Called regularly (e.g., every render). If at least _auto_dev_interval
+        seconds have passed, advance autonomous development.
+        """
+        now = now_ts()
+        if self._last_auto_dev_time == 0.0:
+            # First call: initialise timestamp but do not immediately rush all phases
+            self._last_auto_dev_time = now
+            # Run initial birth phase once at startup
+            run_auto_development(self)
+            return
+
+        if now - self._last_auto_dev_time >= self._auto_dev_interval:
+            run_auto_development(self)
+            self._last_auto_dev_time = now
+
+    # ------------------------------
     #  MAIN ENTRYPOINT
     # ------------------------------
     def process_question(self, question: str) -> Dict[str, Any]:
+        # Even when asked something, keep autonomous development running
+        self.maybe_auto_develop()
+
         self.interaction_count += 1
         self.ensure_childhood()
 
@@ -118,7 +153,7 @@ class A7DOMind:
         else:
             self.timeline.add_step(
                 phase="recall",
-                description="No strong direct matches in memory; relying on more general childhood structure.",
+                description="No strong direct matches in memory; relying on more general childhood and development structure.",
                 intensity=0.4,
                 emotion_valence=valence_q,
             )
@@ -146,7 +181,7 @@ class A7DOMind:
         # Mind path
         self.timeline.add_step(
             phase="mind_path",
-            description="Tracing a path through childhood concepts, current question tags, recalled memories, and curriculum hints.",
+            description="Tracing a path through childhood, autonomous development, current question tags, recalled memories, and curriculum hints.",
             intensity=0.75,
             emotion_valence=valence_q,
         )
@@ -176,7 +211,7 @@ class A7DOMind:
             emotion_labels=labels_q,
         )
 
-        # Update active path with the newly stored memory as well (optional)
+        # Update active path with the newly stored memory
         active_path.append(mem_idx)
         self._last_active_path = active_path
 
@@ -191,7 +226,7 @@ class A7DOMind:
             for s in related_summaries:
                 answer_lines.append(f"  • {s}")
         else:
-            answer_lines.append("- I don't find specific matches in my earlier memories, so I'm leaning on general patterns.")
+            answer_lines.append("- I don't find specific matches in my earlier memories, so I'm leaning on general and developmental patterns.")
 
         # Curriculum reflection
         if curriculum_lessons:
@@ -255,39 +290,4 @@ class A7DOMind:
         curriculum_lessons: List[Dict[str, Any]],
     ) -> str:
         lines = []
-        lines.append(f"From this question, I updated my understanding as a {self.developmental_stage()} mind.")
-        lines.append(f"- I stored this as a(n) **{kind}** memory.")
-        if tags:
-            lines.append(f"- Key themes I noticed: {', '.join(sorted(set(tags))[:8])}.")
-        if domains:
-            lines.append(f"- I treated it as touching these domains: {', '.join(domains)}.")
-        if curriculum_lessons:
-            titles = [c['title'] for c in curriculum_lessons[:2]]
-            lines.append(f"- It nudged my internal curriculum around: {', '.join(titles)}.")
-        lines.append(f"- My SLED-style coherence score ended around {coherence_state.coherence:.2f}.")
-        return "\n".join(lines)
-
-    def learning_summary(self) -> str:
-        return self._last_learning_summary
-
-    def timeline_records(self) -> List[Dict[str, Any]]:
-        return self.timeline.to_records()
-
-    def memory_summary_lines(self) -> List[str]:
-        return self.memory.summary_lines()
-
-    def memory_size(self) -> int:
-        return self.memory.size()
-
-    def build_graph(self) -> Dict[str, Any]:
-        return graph_for_visualisation(self.memory, self._last_active_path)
-
-    def thinking_style_summary(self) -> str:
-        return (
-            f"Child profile: {self.profile.name} — "
-            f"{self.profile.description} "
-            f"(thinking style: {', '.join(self.profile.thinking_style)})"
-        )
-
-    def active_path(self) -> List[int]:
-        return self._last_active_path
+       
