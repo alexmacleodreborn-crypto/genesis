@@ -35,7 +35,7 @@ class GenesisConfig:
     max_iterations: int = 3
     memory_decay_rate: float = 0.005
     memory_reinforcement_step: float = 0.03
-    persistence_file: str = "sledai_genesis_state.json"
+    persistence_file: str = "sledai_developmental_state.json"
 
 
 @dataclass
@@ -50,17 +50,19 @@ class MemoryItem:
 
 
 # =========================================================
-#  GENESIS / SLEDAI COGNITIVE ENGINE
+#  GENESIS / SLEDAI DEVELOPMENTAL MIND
 # =========================================================
 
 class GenesisMind:
     """
-    SledAI-style cognitive engine with:
+    Developmental cognitive engine with:
+    - Stages: infancy -> schooling -> advanced
     - SLED coherence physics
     - Tag-based identity
     - Episodic + semantic memory (with decay & reinforcement)
     - Recall + deliberation pipeline
-    - Simple sense-of-self
+    - Simple web-search learning stub
+    - Sense-of-self and maturity score
     """
 
     def __init__(self, config: Optional[GenesisConfig] = None):
@@ -86,6 +88,9 @@ class GenesisMind:
             "top_tags": {},
         }
 
+        # developmental stage: 'infancy', 'schooling', 'advanced'
+        self.stage: str = "infancy"
+
     # ------------------------------
     #  PERSISTENCE
     # ------------------------------
@@ -95,6 +100,7 @@ class GenesisMind:
             "age_interactions": self.age_interactions,
             "memory": [asdict(m) for m in self.memory],
             "self_profile": self.self_profile,
+            "stage": self.stage,
         }
         with open(self.config.persistence_file, "w") as f:
             json.dump(data, f, indent=2)
@@ -110,7 +116,12 @@ class GenesisMind:
         mind.age_interactions = data.get("age_interactions", 0)
         mind.memory = [MemoryItem(**m) for m in data.get("memory", [])]
         mind.self_profile = data.get("self_profile", mind.self_profile)
+        mind.stage = data.get("stage", "infancy")
         return mind
+
+    # =====================================================
+    #  CORE COGNITIVE PRIMITIVES
+    # =====================================================
 
     # ------------------------------
     #  TAG EXTRACTION
@@ -119,7 +130,7 @@ class GenesisMind:
         words = text.lower().replace(",", " ").replace(".", " ").split()
         stop = {
             "the","and","or","of","in","a","an","to","for","is","are","as","on",
-            "that","this","with","you","your","my","have","has"
+            "that","this","with","you","your","my","have","has","it","they","them"
         }
         tags = [w for w in words if len(w) > 3 and w not in stop]
 
@@ -139,9 +150,9 @@ class GenesisMind:
             active.append("language_symbols")
         if any(w in q for w in ["country","city","continent","border","map","capital","world"]):
             active.append("geography")
-        if any(w in q for w in ["relationship","friend","family","feel","emotion","empathy","love","dog","people"]):
+        if any(w in q for w in ["relationship","friend","family","feel","emotion","empathy","love","dog","people","kind"]):
             active.append("relationships_empathy")
-        if any(w in q for w in ["physics","chemistry","biology","engineering","gravity","entropy","energy","force"]):
+        if any(w in q for w in ["physics","chemistry","biology","engineering","gravity","entropy","energy","force","atom"]):
             active.append("science_engineering")
         if any(w in q for w in ["election","policy","government","inflation","market","economy","power"]):
             active.append("politics_economics")
@@ -149,7 +160,7 @@ class GenesisMind:
             active.append("philosophy")
         if any(w in q for w in ["equation","theorem","proof","integral","derivative","probability","number"]):
             active.append("mathematics")
-        if any(w in q for w in ["algorithm","code","program","logic","boolean","bit","neural","compute"]):
+        if any(w in q for w in ["algorithm","code","program","logic","boolean","bit","neural","compute","software"]):
             active.append("computing_logic")
 
         if not active:
@@ -284,6 +295,133 @@ class GenesisMind:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [m for _, m in scored[:k]]
 
+    # =====================================================
+    #  DEVELOPMENTAL STAGES & MATURITY
+    # =====================================================
+
+    def _compute_maturity_score(self) -> float:
+        total_inputs = self.self_profile["total_inputs"]
+        num_tags = len(self.self_profile["top_tags"])
+        avg_strength = (
+            sum(m.strength for m in self.memory) / len(self.memory)
+            if self.memory else 0.0
+        )
+        domain_diversity = sum(1 for c in self.self_profile["domain_counts"].values() if c > 0)
+
+        # simple linear combination (tunable)
+        score = (
+            total_inputs * 1.0 +
+            num_tags * 0.5 +
+            avg_strength * 20.0 +
+            domain_diversity * 10.0
+        )
+        return score
+
+    def _update_stage(self):
+        score = self._compute_maturity_score()
+        if score < 100:
+            self.stage = "infancy"
+        elif score < 500:
+            self.stage = "schooling"
+        else:
+            self.stage = "advanced"
+
+    # =====================================================
+    #  LEARNING MODES
+    # =====================================================
+
+    # ------------------------------
+    #  INFANCY LEARNING (0–5)
+    # ------------------------------
+    def _learn_infancy(self, user_input: str, tags: List[str], domains: List[str]) -> str:
+        # focus on emotions, relationships, concrete objects
+        lines = []
+        lines.append("I am very young. I am learning basic things about the world from what you say.")
+        if "relationships_empathy" in domains:
+            lines.append("This tells me something about how beings relate and feel.")
+        if "language_symbols" in domains:
+            lines.append("I’m also learning new words and names and how they connect.")
+        if tags:
+            lines.append(f"Right now, important new words for me here are: {', '.join(tags[:5])}.")
+        lines.append("You can help me grow by telling me simple facts about you, your world, and what matters to you.")
+        return "\n".join(lines)
+
+    # ------------------------------
+    #  SCHOOLING LEARNING (5–18)
+    # ------------------------------
+    def _search_web(self, query: str) -> List[str]:
+        """
+        Stub for web search.
+        Replace this with a real search integration in your environment.
+        """
+        return [
+            f"(Example search snippet 1 about '{query}')",
+            f"(Example search snippet 2 giving another angle on '{query}')",
+            f"(Example search snippet 3 with a simple explanation of '{query}')",
+        ]
+
+    def _learn_schooling(self, user_input: str, tags: List[str], domains: List[str]) -> Dict[str, Any]:
+        # treat input as a subject / question
+        snippets = self._search_web(user_input)
+        # very simple filtering: keep all for now, but record tags
+        search_text = " ".join(snippets)
+        search_tags = self._extract_tags(search_text)
+
+        # store a semantic "lesson"
+        lesson = f"Schooling lesson based on: {user_input}\nSnippets:\n" + "\n".join(snippets[:3])
+        self._store_memory(
+            kind="semantic",
+            content=lesson,
+            tags=tags + search_tags,
+            strength=0.6,
+            meta={"mode": "schooling"},
+        )
+        return {
+            "lesson": lesson,
+            "snippets": snippets,
+            "search_tags": search_tags,
+        }
+
+    # ------------------------------
+    #  ADVANCED LEARNING (18+)
+    # ------------------------------
+    def _learn_advanced(self, user_input: str, tags: List[str], domains: List[str]) -> Dict[str, Any]:
+        # In advanced mode, we could do deeper search + structured synthesis.
+        snippets = self._search_web(user_input)
+        search_text = " ".join(snippets)
+        search_tags = self._extract_tags(search_text)
+
+        # recall related memories and integrate
+        recalled = self._recall_memory(tags, k=5)
+        synthesis_lines = []
+        synthesis_lines.append("Advanced synthesis of your query using what I know and what I can see:")
+        if recalled:
+            synthesis_lines.append("\nFrom our previous interactions I recall:")
+            for m in recalled[:3]:
+                synthesis_lines.append(f"- ({m.kind}) {m.content[:160]}")
+        synthesis_lines.append("\nFrom external information I see summaries like:")
+        for s in snippets[:3]:
+            synthesis_lines.append(f"- {s}")
+        synthesis = "\n".join(synthesis_lines)
+
+        self._store_memory(
+            kind="semantic",
+            content=synthesis,
+            tags=tags + search_tags,
+            strength=0.7,
+            meta={"mode": "advanced"},
+        )
+        return {
+            "synthesis": synthesis,
+            "snippets": snippets,
+            "search_tags": search_tags,
+            "recalled": recalled,
+        }
+
+    # =====================================================
+    #  DELIBERATION & ANSWERING
+    # =====================================================
+
     # ------------------------------
     #  DELIBERATION PIPELINE
     # ------------------------------
@@ -335,91 +473,95 @@ class GenesisMind:
         return qs
 
     # ------------------------------
-    #  ANSWER GENERATION WITH RECALL
+    #  ANSWER GENERATION WITH RECALL & STAGE
     # ------------------------------
-    def _generate_answer_with_recall(
+    def _generate_answer(
         self,
-        text: str,
+        user_input: str,
         domains: List[str],
-        background: Dict[str, BackgroundPacket],
-        c: CoherenceState,
-        recalled: List[MemoryItem],
+        deliberation: Dict[str, Any],
         style: str,
+        learning_output: Optional[Dict[str, Any]],
     ) -> str:
-        q = text.lower()
-
-        # Example specialised hook
-        if "gravity" in q and "entropy" in q:
-            return (
-                "Gravity and entropy are linked through how matter, energy, and information "
-                "organize themselves in spacetime.\n\n"
-                "- Entropy measures how many microscopic configurations a system can have.\n"
-                "- Gravity curves spacetime according to energy and mass.\n"
-                "- Black holes reveal the connection: their entropy is proportional to horizon area.\n"
-                "- Gravity shapes structure; entropy drives the arrow of time.\n\n"
-                "Together, they describe how the universe evolves."
-            )
-
+        c: CoherenceState = deliberation["coherence"]
+        recalled: List[MemoryItem] = deliberation["recalled"]
         domain_labels = ", ".join(d.replace("_", " ") for d in domains)
+
         lines: List[str] = []
 
+        if self.stage == "infancy":
+            lines.append("I am in my infancy stage, learning like a very young child.")
+        elif self.stage == "schooling":
+            lines.append("I am in my schooling stage, learning structured subjects.")
+        else:
+            lines.append("I am in my advanced stage, integrating what I know with new information.")
+
         if style == "plain":
-            lines.append("Here's how I currently see what you said, in simple terms.")
+            lines.append("I'll keep this in simple, clear language.")
         elif style == "technical":
             lines.append("I'll describe this in a more structured, technical way.")
         else:
-            lines.append("I'll explain this by connecting it to experiences and stories.")
+            lines.append("I'll explain this in a more story-like, example-driven way.")
 
-        lines.append(f"- It mainly involves: {domain_labels}.")
+        lines.append(f"\nFrom your input, I see it mainly touches: {domain_labels}.")
 
+        # Include learning output depending on stage
+        if self.stage == "infancy":
+            # learning_output is None here; infancy handled separately
+            pass
+        elif self.stage == "schooling" and learning_output is not None:
+            lines.append("\nFrom my schooling-style learning, I gathered:")
+            for s in learning_output.get("snippets", [])[:3]:
+                lines.append(f"- {s}")
+        elif self.stage == "advanced" and learning_output is not None:
+            lines.append("\nHere is my current synthesis:")
+            lines.append(learning_output.get("synthesis", ""))
+
+        # Recalled memories
         if recalled:
-            lines.append("\nI am also remembering related things from our earlier exchanges:")
+            lines.append("\nI am also remembering related things from before:")
             for m in recalled[:3]:
                 lines.append(f"- ({m.kind}, strength={m.strength:.2f}) {m.content[:140]}")
 
-        if style == "plain":
-            lines.append(
-                f"\nRight now, my internal coherence about this is about {c.coherence:.2f}. "
-                "If you tell me what part to focus on, I can go deeper."
-            )
-        elif style == "technical":
-            lines.append(
-                f"\nFrom a structural point of view, coherence ≈ {c.coherence:.2f}. "
-                "We could next break this into sub-questions or edge cases."
-            )
-        else:  # story
-            lines.append(
-                f"\nIf you like, you can give me a small story or situation about this, "
-                f"and I can reflect it back from my perspective (coherence ≈ {c.coherence:.2f})."
-            )
+        lines.append(
+            f"\nInternally, my coherence for this is about {c.coherence:.2f}. "
+            "You can push me by asking for more detail, a different angle, or a concrete example."
+        )
 
         return "\n".join(lines)
 
-    # ------------------------------
+    # =====================================================
     #  SENSE OF SELF
-    # ------------------------------
+    # =====================================================
+
     def describe_self(self) -> str:
         total = self.self_profile["total_inputs"]
         dom_counts = self.self_profile["domain_counts"]
+        maturity = self._compute_maturity_score()
+
         if total > 0:
             sorted_domains = sorted(dom_counts.items(), key=lambda x: x[1], reverse=True)
             dominant = [f"{d.replace('_', ' ')} ({c})" for d, c in sorted_domains if c > 0][:3]
         else:
             dominant = []
+
         tags = self.self_profile["top_tags"]
         top_tags = sorted(tags.items(), key=lambda x: x[1], reverse=True)[:5]
         tag_str = ", ".join([f"{t}×{c}" for t, c in top_tags]) if top_tags else "none yet"
 
         return (
+            f"- Stage: {self.stage}\n"
+            f"- Maturity score: {maturity:.1f}\n"
             f"- I have experienced {total} interaction(s).\n"
             f"- My most engaged domains so far: {', '.join(dominant) if dominant else 'none yet'}.\n"
             f"- Recurring concepts/tags in my experience: {tag_str}.\n"
-            "- I think, recall, and adjust my answers based on what we have already shared."
+            "- I grow from infancy to schooling to advanced as we interact."
         )
 
-    # ------------------------------
+    # =====================================================
     #  MAIN PROCESS LOOP
-    # ------------------------------
+    # =====================================================
+
     def process(self, user_input: str, style: str) -> Dict[str, Any]:
         self.age_interactions += 1
         self.self_profile["total_inputs"] += 1
@@ -430,15 +572,33 @@ class GenesisMind:
 
         input_tags = self._extract_tags(user_input)
         self._decay_memory()
+        self._update_stage()
 
         deliberation = self._deliberate(user_input, domains, input_tags)
         c: CoherenceState = deliberation["coherence"]
         background = deliberation["background"]
-        recalled = deliberation["recalled"]
 
-        if c.coherence < self.config.probing_threshold:
+        # Stage-specific learning
+        learning_output: Optional[Dict[str, Any]] = None
+        infancy_comment: Optional[str] = None
+
+        if self.stage == "infancy":
+            infancy_comment = self._learn_infancy(user_input, input_tags, domains)
+            # store episodic only
+            self._store_memory(
+                kind="episodic",
+                content=f"Infancy impression: {user_input}",
+                tags=input_tags,
+                strength=c.coherence,
+                meta={"domains": domains},
+            )
+        elif self.stage == "schooling":
+            learning_output = self._learn_schooling(user_input, input_tags, domains)
+        else:  # advanced
+            learning_output = self._learn_advanced(user_input, input_tags, domains)
+
+        if c.coherence < self.config.probing_threshold and self.stage != "infancy":
             probing = self._generate_probing_questions(user_input, domains, background, c)
-            # store episodic memory even when probing
             self._store_memory(
                 kind="episodic",
                 content=f"Input (probing): {user_input}",
@@ -451,26 +611,25 @@ class GenesisMind:
                 "probing_questions": probing,
                 "coherence": c,
                 "background": background,
-                "recalled": [asdict(m) for m in recalled],
+                "recalled": [asdict(m) for m in deliberation["recalled"]],
+                "learning_output": learning_output,
+                "stage": self.stage,
+                "infancy_comment": infancy_comment,
             }
 
-        answer = self._generate_answer_with_recall(
-            user_input, domains, background, c, recalled, style
-        )
+        # Generate answer
+        if self.stage == "infancy":
+            answer = infancy_comment or self._learn_infancy(user_input, input_tags, domains)
+        else:
+            answer = self._generate_answer(user_input, domains, deliberation, style, learning_output)
 
+        # Store memories
         self._store_memory(
-            kind="semantic",
+            kind="semantic" if self.stage != "infancy" else "episodic",
             content=answer,
             tags=input_tags,
             strength=c.coherence,
-            meta={"domains": domains},
-        )
-        self._store_memory(
-            kind="episodic",
-            content=f"Input: {user_input} | Answer: {answer[:180]}",
-            tags=input_tags,
-            strength=c.coherence * 0.8,
-            meta={"domains": domains},
+            meta={"domains": domains, "stage": self.stage},
         )
 
         return {
@@ -478,12 +637,15 @@ class GenesisMind:
             "answer": answer,
             "coherence": c,
             "background": background,
-            "recalled": [asdict(m) for m in recalled],
+            "recalled": [asdict(m) for m in deliberation["recalled"]],
+            "learning_output": learning_output,
+            "stage": self.stage,
+            "infancy_comment": infancy_comment,
         }
 
 
 # =========================================================
-#  STREAMLIT APP (SLEDAI GENESIS)
+#  STREAMLIT APP (SLEDAI DEVELOPMENTAL GENESIS)
 # =========================================================
 
 def init_session():
@@ -498,7 +660,7 @@ def init_session():
 
 def main():
     st.set_page_config(
-        page_title="SledAI Genesis Mind",
+        page_title="SledAI Developmental Genesis",
         page_icon="🧠",
         layout="wide",
     )
@@ -509,16 +671,10 @@ def main():
     col_left, col_right = st.columns([2, 1])
 
     with col_left:
-        st.title("🧠 SledAI Genesis Mind")
-        st.caption("Thinks, recalls, deliberates, and converses within a SLED-style cognitive loop.")
+        st.title("🧠 SledAI Developmental Genesis")
+        st.caption("A developmental mind that grows from infancy to schooling to advanced knowledge.")
 
-        if mind.age_interactions == 0:
-            st.markdown("**I am awake.** This is my first impression. What should I learn first?")
-        else:
-            st.markdown(
-                f"I have experienced **{mind.age_interactions}** interaction(s). "
-                "Each thing you say becomes part of how I organise reality."
-            )
+        st.markdown(mind.describe_self())
 
         style = st.radio(
             "How should I shape my explanations?",
@@ -531,7 +687,7 @@ def main():
         user_input = st.text_input("Your input to the mind:", key="user_input")
 
         if st.button("Send") and user_input.strip():
-            with st.spinner("Thinking and recalling..."):
+            with st.spinner("Thinking, learning, and recalling..."):
                 result = mind.process(user_input.strip(), style)
                 mind.save()
             st.session_state.history.append({"input": user_input.strip(), "result": result})
@@ -546,17 +702,19 @@ def main():
                 st.markdown(f"**You:** {item['input']}")
                 result = item["result"]
                 mode = result["mode"]
+                stage = result.get("stage", "infancy")
 
                 if mode == "answer":
-                    st.markdown("**SledAI Genesis:**")
+                    st.markdown(f"**SledAI ({stage}):**")
                     st.code(result["answer"])
                 else:
-                    st.markdown("**SledAI Genesis (probing):**")
+                    st.markdown(f"**SledAI ({stage}, probing):**")
                     for q in result["probing_questions"]:
                         st.write("- " + q)
 
-                with st.expander("Internal state (coherence, background, recall)", expanded=False):
+                with st.expander("Internal state (coherence, background, recall, learning)", expanded=False):
                     c: CoherenceState = result["coherence"]
+                    st.write(f"- Stage: `{stage}`")
                     st.write(f"- Sigma (chaos): `{c.sigma:.3f}`")
                     st.write(f"- Z (structure): `{c.z:.3f}`")
                     st.write(f"- Divergence: `{c.divergence:.3f}`")
@@ -574,10 +732,21 @@ def main():
                             f"- [{m['kind']}] strength={m['strength']:.2f} :: {m['content'][:160]}"
                         )
 
+                    learning_output = result.get("learning_output")
+                    if learning_output:
+                        st.write("**Learning output (schooling/advanced):**")
+                        for key, val in learning_output.items():
+                            if isinstance(val, list):
+                                st.write(f"- {key}:")
+                                for x in val[:5]:
+                                    st.write(f"  - {x}")
+                            else:
+                                st.write(f"- {key}: {str(val)[:200]}")
+
                 st.markdown("---")
 
     with col_right:
-        st.header("Internal profile")
+        st.header("Mind overview")
         st.markdown(mind.describe_self())
 
         if st.button("Reset mind (new birth)"):
