@@ -6,7 +6,7 @@ from .timeline import Timeline
 from .emotions import infer_emotion_from_text
 from .coherence import compute_coherence, CoherenceState, describe_coherence
 from .childhood import run_initial_childhood, maybe_extend_childhood_from_question
-from .graph import build_memory_graph
+from .graph import graph_for_visualisation
 from .profile import get_alex_profile, ChildProfile
 from .curriculum import get_lessons_for_domains
 
@@ -266,7 +266,7 @@ class A7DOMind:
         return self.memory.size()
 
     def build_graph(self) -> Dict[str, Any]:
-        return build_memory_graph(self.memory)
+        return graph_for_visualisation(self.memory)
 
     def thinking_style_summary(self) -> str:
         return (
