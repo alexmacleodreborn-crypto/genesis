@@ -30,9 +30,11 @@ def main():
     with col_left:
         st.title("SLED AI — A7DO Cognitive Engine")
         st.caption(
-            f"Developmental age: {mind.interaction_count} interactions · "
+            f"Developmental stage: {mind.developmental_stage()} · "
+            f"Age: {mind.interaction_count} interactions · "
             f"Total memories: {mind.memory_size()}"
         )
+        st.caption(mind.thinking_style_summary())
         st.markdown("**Welcome, Alex.**")
 
         st.markdown("### Ask A7DO a question")
@@ -54,6 +56,14 @@ def main():
             st.code(st.session_state.last_answer)
         else:
             st.info("Ask a question above to hear from A7DO.")
+
+        st.markdown("---")
+        st.markdown("### What A7DO just learned from this question")
+        learning_summary = mind.learning_summary()
+        if learning_summary:
+            st.markdown(learning_summary)
+        else:
+            st.info("Once you ask a question, A7DO will show you what it learned here.")
 
         st.markdown("---")
         st.markdown("### A7DO childhood & experience memories (textual summary)")
