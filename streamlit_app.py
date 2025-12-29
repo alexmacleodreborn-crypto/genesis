@@ -17,6 +17,7 @@ import streamlit as st
 #   1) Set an environment variable: BING_API_KEY=...
 #   2) Or replace "PLACEHOLDER_KEY" with your key in a local copy (do not commit it).
 BING_API_KEY = "781342f8bdd3a318635db0b7c6c69b8ee047ef335b2a278651c8489621b837d9"
+print("Loaded Bing key prefix:", BING_API_KEY[:10])
 
 
 # Bing Web Search v7 endpoint (global)
