@@ -1,116 +1,63 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 
-from a7do.childhood import Childhood
-from a7do.identity import Identity
-from a7do.emotional_state import EmotionalState
-from a7do.memory import Memory
-from a7do.development import Development
-from a7do.multi_agent import MultiAgent
+st.set_page_config(layout="wide")
 
+st.title("🧠 Mind Inspector")
 
-st.set_page_config(page_title="A7DO – Mind Inspector", layout="wide")
+# --------------------------------------------------
+# Recover shared state
+# --------------------------------------------------
 
-st.title("🧠 A7DO Mind Inspector")
-st.caption("Read-only inspection of the cognitive system state")
-
-# ------------------------------------------------------------------
-# IMPORTANT:
-# This inspector creates NO new cognition.
-# It only reflects what exists in session state.
-# ------------------------------------------------------------------
-
-# Recover or create shared state
-if "identity" not in st.session_state:
-    st.warning("No cognitive session detected yet. Run A7DO first.")
-    st.stop()
-
-identity = st.session_state["identity"]
-emotion = st.session_state["emotion"]
-memory = st.session_state["memory"]
-development = st.session_state["development"]
-multi_agent = st.session_state["multi_agent"]
-mind = st.session_state["mind"]
+mind = st.session_state.get("mind")
 childhood = st.session_state.get("childhood")
 
-# ------------------------------------------------------------------
-# IDENTITY
-# ------------------------------------------------------------------
+if not mind:
+    st.error("Mind not initialised yet.")
+    st.stop()
 
-st.header("🧬 Identity")
+# --------------------------------------------------
+# Cognitive Timeline
+# --------------------------------------------------
 
-st.markdown(f"""
-- **System:** {identity.system_name}
-- **Creator:** {identity.creator}
-- **User:** {identity.user_name or "Unknown"}
-""")
+st.header("📜 Cognitive Timeline")
+for e in mind.events:
+    st.code(e)
 
-# ------------------------------------------------------------------
-# EMOTIONAL STATE
-# ------------------------------------------------------------------
+# --------------------------------------------------
+# Reasoning Signals (Z–Σ)
+# --------------------------------------------------
 
-st.header("❤️ Emotional State")
-
-st.json(emotion.export())
-
-# ------------------------------------------------------------------
-# DEVELOPMENT
-# ------------------------------------------------------------------
-
-st.header("🌱 Development")
-
-st.markdown(f"**Current Stage:** {development.STAGES[development.index]}")
-
-# ------------------------------------------------------------------
-# MEMORY
-# ------------------------------------------------------------------
-
-st.header("🗂 Memory")
-
-st.metric("Total Memory Entries", len(memory.entries))
-
-if memory.entries:
-    st.subheader("Recent Memory")
-    st.json(memory.recent(10))
-else:
-    st.info("No memories stored yet.")
-
-# ------------------------------------------------------------------
-# REASONING SIGNALS
-# ------------------------------------------------------------------
+signals = getattr(mind, "last_signals", None)
 
 st.header("📈 Reasoning Signals (Z–Σ)")
 
-signals = multi_agent.last_signals
-
 if signals:
-    z = signals.get("z", [])
-    sigma = signals.get("sigma", [])
+    z = signals["z"]
+    sigma = signals["sigma"]
+    mode = signals.get("mode", "unknown")
 
-    if z and sigma:
-        fig, ax = plt.subplots(2, 1, figsize=(9, 5))
+    fig, ax = plt.subplots(2, 1, figsize=(9, 5))
 
-        ax[0].plot(z, label="Z (Inhibition)")
-        ax[0].plot(sigma, label="Σ (Chaos)")
-        ax[0].legend()
-        ax[0].set_title("Neural Physics: Thought Shape")
+    ax[0].plot(z, label="Z (Inhibition)")
+    ax[0].plot(sigma, label="Σ (Exploration)")
+    ax[0].legend()
+    ax[0].set_title(f"Constraint vs Exploration ({mode})")
 
-        coherence = [s / (zv + 1e-3) for s, zv in zip(sigma, z)]
-        ax[1].plot(coherence)
-        ax[1].axhline(0.6, linestyle="--", color="yellow")
-        ax[1].set_title("Consciousness Gate (Safe to Speak)")
+    coherence = [s / (zv + 1e-3) for s, zv in zip(sigma, z)]
+    ax[1].plot(coherence)
+    ax[1].axhline(0.6, linestyle="--", color="yellow")
+    ax[1].set_title("Coherence Gate (Safe to Speak)")
 
-        st.pyplot(fig)
-    else:
-        st.info("Signals present but empty.")
+    st.pyplot(fig)
 else:
-    st.info("No reasoning signals yet.")
+    st.info("No reasoning signals recorded yet.")
 
 # --------------------------------------------------
-# CHILDHOOD LEARNING
+# Childhood Learning Inspector
 # --------------------------------------------------
 
-st.header("🧒 Childhood Learning (0–5)")
+st.header("🧒 Childhood Learning")
 
 if childhood:
     summary = childhood.summary()
@@ -121,27 +68,12 @@ if childhood:
     )
 
     if summary["active"]:
-        st.metric(
-            "Seconds Remaining",
-            summary["seconds_remaining"]
-        )
+        st.metric("Seconds Remaining", summary["seconds_remaining"])
 
     if summary["imprints"]:
         st.subheader("Recent Imprints")
         st.json(summary["imprints"])
     else:
-        st.info("No childhood imprints recorded yet.")
+        st.info("No childhood imprints yet.")
 else:
     st.info("Childhood module not initialised.")
-    
-# ------------------------------------------------------------------
-# COGNITIVE TIMELINE
-# ------------------------------------------------------------------
-
-st.header("🧠 Cognitive Timeline")
-
-if mind.events:
-    for e in mind.events:
-        st.code(e)
-else:
-    st.info("No cognitive events recorded yet.")
