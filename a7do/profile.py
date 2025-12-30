@@ -22,6 +22,23 @@ class PersonProfile:
 
         self.self_references = 0
         self.utterances = 0
+        
+class ProfileManager:
+    """
+    Manages language profiles for users.
+    """
+
+    def __init__(self):
+        self.profiles = {}
+
+    def get_or_create(self, name: str | None):
+        key = name or "unknown"
+        if key not in self.profiles:
+            self.profiles[key] = PersonProfile(name)
+        return self.profiles[key]
+
+    def summary(self):
+        return {k: v.summary() for k, v in self.profiles.items()}
 
     # --------------------------------------------------
     # Language learning
