@@ -1,5 +1,4 @@
 import streamlit as st
-import matplotlib.pyplot as plt
 
 from a7do.identity import Identity
 from a7do.emotional_state import EmotionalState
@@ -12,7 +11,11 @@ from a7do.mind import A7DOMind
 st.set_page_config(page_title="A7DO Cognitive Interface", layout="wide")
 
 st.title("🧠 A7DO — Cognitive Interface")
-st.caption("Developmental cognition with entity grounding")
+st.caption("Developmental cognition with entity grounding and childhood learning")
+
+# --------------------------------------------------
+# Session init
+# --------------------------------------------------
 
 if "mind" not in st.session_state:
     identity = Identity()
@@ -32,19 +35,22 @@ if "mind" not in st.session_state:
     )
 
     st.session_state.update({
+        "mind": mind,
         "identity": identity,
         "emotion": emotion,
         "memory": memory,
         "development": development,
-        "mind": mind,
+        "childhood": childhood,
         "last_result": None,
     })
 
 mind = st.session_state["mind"]
 identity = st.session_state["identity"]
-emotion = st.session_state["emotion"]
-memory = st.session_state["memory"]
 development = st.session_state["development"]
+
+# --------------------------------------------------
+# Sidebar
+# --------------------------------------------------
 
 with st.sidebar:
     st.header("🧬 System State")
@@ -62,12 +68,15 @@ with st.sidebar:
         "index": development.index
     })
 
-    st.subheader("Foundational Language")
+    st.subheader("📚 Foundational Language")
     st.json(mind.curriculum.peek_progress())
 
     if mind.last_curriculum_packet:
-        st.write("Latest language drip")
+        st.write("Latest drip")
         st.json(mind.last_curriculum_packet)
+
+    st.subheader("🧒 Childhood Learning")
+    st.json(mind.childhood.summary())
 
     st.subheader("🧩 Entity Graph")
     st.json(mind.entities.summary())
@@ -76,7 +85,11 @@ with st.sidebar:
     st.json(mind.density.stats())
 
     st.subheader("🗂 Memory")
-    st.json(memory.summary())
+    st.json(st.session_state["memory"].summary())
+
+# --------------------------------------------------
+# Interaction
+# --------------------------------------------------
 
 user_text = st.text_input("Speak to A7DO")
 
