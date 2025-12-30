@@ -6,6 +6,7 @@ class A7DOMind:
     """
     Central cognitive orchestrator.
     Owns cognition state and exposes it for inspection.
+    Implements coherence-gated speech.
     """
 
     def __init__(self, identity, emotion, memory, development, multi_agent, childhood):
@@ -106,19 +107,16 @@ class A7DOMind:
         self.last_signals = reasoning["signals"]
 
         # -------------------------
-        # Memory
+        # Memory + development
         # -------------------------
         self.emit("MEMORY", "Storing dialogue")
         self.memory.add("dialogue", text)
 
-        # -------------------------
-        # Development
-        # -------------------------
         self.emit("DEVELOPMENT", "Updating development stage")
         self.development.update(self.memory)
 
         # -------------------------
-        # Coherence scoring (post)
+        # Coherence scoring
         # -------------------------
         self.last_coherence = self._coherence.score(
             mode="deliberation",
@@ -126,16 +124,39 @@ class A7DOMind:
             signals=self.last_signals
         )
 
+        # -------------------------
+        # Speech gating
+        # -------------------------
+        label = (self.last_coherence or {}).get("label", "AMBER")
+
+        if label == "RED":
+            self.emit("GATE", "Speech blocked (low coherence)")
+            answer = (
+                "I’m not coherent enough to answer safely yet. "
+                "Can you clarify what you mean (1 sentence), or give one concrete example?"
+            )
+            self.emit("OUTPUT", "Stabiliser response ready")
+            return self._result(answer, self.last_signals, "deliberation", speech_action="block")
+
+        if label == "AMBER":
+            self.emit("GATE", "Cautious speech (medium coherence)")
+            # Keep the answer, but encourage precision
+            answer = reasoning["final"] + "\n\n(If you want a tighter answer, tell me your exact goal in one line.)"
+            self.emit("OUTPUT", "Cautious answer ready")
+            return self._result(answer, self.last_signals, "deliberation", speech_action="cautious")
+
+        # GREEN
+        self.emit("GATE", "Speech allowed (high coherence)")
         self.emit("OUTPUT", "Answer ready")
+        return self._result(reasoning["final"], self.last_signals, "deliberation", speech_action="speak")
 
-        return self._result(reasoning["final"], self.last_signals, "deliberation")
-
-    def _result(self, answer, signals, mode: str):
+    def _result(self, answer, signals, mode: str, speech_action: str = "speak"):
         return {
             "answer": answer,
             "events": list(self.events),
             "path": list(self.path),
             "signals": signals,
             "mode": mode,
-            "coherence": self.last_coherence
+            "coherence": self.last_coherence,
+            "speech_action": speech_action
         }
