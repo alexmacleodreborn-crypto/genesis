@@ -1,6 +1,6 @@
 import time
 from a7do.coherence import CoherenceScorer
-
+from a7do.profile import ProfileManager
 
 class A7DOMind:
     """
