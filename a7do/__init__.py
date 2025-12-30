@@ -1,1 +1,1 @@
-# A7DO package initializer
+# A7DO package
