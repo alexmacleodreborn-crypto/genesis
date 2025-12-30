@@ -18,7 +18,9 @@ development = Development()
 multi_agent = MultiAgent()
 childhood = Childhood()
 
-mind = A7DOMind(identity, emotion, memory, development, multi_agent, childhood)st.session_state["identity"] = identity
+mind = A7DOMind(identity, emotion, memory, development, multi_agent, childhood)
+
+st.session_state["identity"] = identity
 st.session_state["emotion"] = emotion
 st.session_state["memory"] = memory
 st.session_state["development"] = development
