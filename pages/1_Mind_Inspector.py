@@ -28,6 +28,20 @@ for e in mind.events:
 # Reasoning Signals (Z–Σ)
 # --------------------------------------------------
 
+st.header("🧭 Last Mind Path")
+st.write(" → ".join(getattr(mind, "path", [])) or "No path recorded yet.")
+
+st.header("✅ Last Coherence")
+st.json(getattr(mind, "last_coherence", None) or {"info": "No coherence yet."})
+
+st.header("📈 Reasoning Signals (Z–Σ)")
+signals = getattr(mind, "last_signals", None)
+if not signals:
+    st.info("No reasoning signals recorded yet.")
+else:
+    st.json({"mode": signals.get("mode", "unknown")})
+    # keep your plotting code here using signals["z"] and signals["sigma"]
+    
 signals = getattr(mind, "last_signals", None)
 
 st.header("📈 Reasoning Signals (Z–Σ)")
