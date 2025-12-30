@@ -8,17 +8,14 @@ class Development:
     ]
 
     def __init__(self):
-        self.stage_index = 0
+        self.index = 0
 
-    def update(self, memory):
-        if len(memory.entries) > (self.stage_index + 1) * 5:
-            self.stage_index = min(self.stage_index + 1, len(self.STAGES) - 1)
+    def update(self, memory: "Memory"):
+        if len(memory.entries) > (self.index + 1) * 5:
+            self.index = min(self.index + 1, len(self.STAGES) - 1)
 
-    def export(self):
-        return {"stage": self.STAGES[self.stage_index]}
-
-    def character_panel(self) -> str:
+    def panel(self) -> str:
         return f"""
 **Development**
-- Stage: {self.STAGES[self.stage_index]}
+- Stage: {self.STAGES[self.index]}
 """
