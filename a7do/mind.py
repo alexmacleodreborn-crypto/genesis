@@ -1,12 +1,4 @@
-from dataclasses import dataclass, field
-from typing import Dict, Any, List
 import time
-
-@dataclass
-class CognitiveEvent:
-    phase: str
-    message: str
-    payload: Dict[str, Any] = field(default_factory=dict)
 
 class A7DOMind:
     def __init__(self, identity, emotion, memory, development, multi_agent):
@@ -15,69 +7,51 @@ class A7DOMind:
         self.memory = memory
         self.development = development
         self.multi_agent = multi_agent
+        self.events = []
 
-        self.events: List[CognitiveEvent] = []
+    def emit(self, phase: str, message: str):
+        self.events.append(f"[{phase}] {message}")
+        time.sleep(0.1)
 
-    def emit(self, phase: str, message: str, **payload):
-        self.events.append(CognitiveEvent(phase, message, payload))
-        time.sleep(0.12)
-
-    def process(self, user_input: str) -> Dict[str, Any]:
+    def process(self, text: str) -> dict:
         self.events.clear()
-
         self.emit("INPUT", "User input received")
-# User identity capture
-if self.identity.is_user_introduction(user_input):
-    self.emit("IDENTITY", "User identity detected")
-    self.identity.capture_user_identity(user_input)
-    answer = f"Nice to meet you, {self.identity.user_name}."
-    
-    self.emit("MEMORY", "Storing user identity")
-    self.memory.add(
-        kind="identity",
-        content=f"User is {self.identity.user_name}",
-        emotion=self.emotion.label
-    )
 
-    self.emit("OUTPUT", "User identity stored")
-    return {
-        "answer": answer,
-        "events": self.events,
-        "emotion": self.emotion.export(),
-        "development": self.development.export(),
-        "memory": self.memory.recent(),
-        "reasoning": {}
-    }
-        # Identity gate
-        if self.identity.is_identity_question(user_input):
-            self.emit("IDENTITY", "Identity question detected")
-            answer = self.identity.answer(user_input)
-        else:
-            self.emit("EMOTION", "Updating emotional baseline")
-            self.emotion.update(user_input)
+        # User identity capture
+        if self.identity.is_user_introduction(text):
+            self.emit("IDENTITY", "User introduced themselves")
+            self.identity.capture_user(text)
+            self.memory.add("identity", f"User is {self.identity.user_name}")
+            self.emit("OUTPUT", "User identity stored")
+            return self._result(f"Nice to meet you, {self.identity.user_name}.", {})
 
-            self.emit("THINKING", "Running multi-agent reasoning")
-            reasoning = self.multi_agent.run(user_input)
+        # System identity
+        if self.identity.is_system_identity_question(text):
+            self.emit("IDENTITY", "System identity question")
+            return self._result(self.identity.system_answer(), {})
 
-            answer = reasoning["final"]
+        # Emotion
+        self.emit("EMOTION", "Updating emotional state")
+        self.emotion.update(text)
 
-        self.emit("MEMORY", "Storing episodic memory")
-        self.memory.add(
-            kind="dialogue",
-            content=user_input,
-            emotion=self.emotion.label
-        )
+        # Reasoning
+        self.emit("THINKING", "Running reasoning cycle")
+        reasoning = self.multi_agent.run(text)
 
-        self.emit("DEVELOPMENT", "Updating developmental stage")
+        # Memory
+        self.emit("MEMORY", "Storing dialogue")
+        self.memory.add("dialogue", text)
+
+        # Development
+        self.emit("DEVELOPMENT", "Updating development")
         self.development.update(self.memory)
 
         self.emit("OUTPUT", "Answer ready")
+        return self._result(reasoning["final"], reasoning["signals"])
 
+    def _result(self, answer, signals):
         return {
             "answer": answer,
             "events": self.events,
-            "emotion": self.emotion.export(),
-            "development": self.development.export(),
-            "memory": self.memory.recent(),
-            "reasoning": self.multi_agent.last_signals()
+            "signals": signals
         }
