@@ -17,6 +17,19 @@ class A7DOMind:
         self.events.clear()
         self.emit("INPUT", "User input received")
 
+# --------------------------------------------------
+# Childhood learning (ages 0–5)
+# --------------------------------------------------
+if self.development.STAGES[self.development.index] in ["Birth", "Learning"]:
+    if not self.childhood.active:
+        self.childhood.start_burst()
+        self.emit("CHILDHOOD", "Childhood learning burst started")
+
+    self.childhood.absorb(text)
+
+    if not self.childhood.is_active():
+        self.emit("CHILDHOOD", "Childhood learning burst ended")
+        
         # User identity capture
         if self.identity.is_user_introduction(text):
             self.emit("IDENTITY", "User introduced themselves")
