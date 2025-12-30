@@ -9,21 +9,10 @@ from a7do.multi_agent import MultiAgent
 from a7do.childhood import Childhood
 from a7do.mind import A7DOMind
 
-# --------------------------------------------------
-# Streamlit configuration
-# --------------------------------------------------
-
-st.set_page_config(
-    page_title="A7DO Cognitive Interface",
-    layout="wide"
-)
+st.set_page_config(page_title="A7DO Cognitive Interface", layout="wide")
 
 st.title("🧠 A7DO — Cognitive Interface")
-st.caption("A coherence-regulated, multi-domain cognitive engine")
-
-# --------------------------------------------------
-# Session-safe initialization
-# --------------------------------------------------
+st.caption("Coherence-regulated cognition with confidence-based learning")
 
 if "mind" not in st.session_state:
     identity = Identity()
@@ -50,18 +39,15 @@ if "mind" not in st.session_state:
         "multi_agent": multi_agent,
         "childhood": childhood,
         "mind": mind,
+        "last_result": None,
     })
 
-identity    = st.session_state["identity"]
-emotion     = st.session_state["emotion"]
-memory      = st.session_state["memory"]
+identity = st.session_state["identity"]
+emotion = st.session_state["emotion"]
+memory = st.session_state["memory"]
 development = st.session_state["development"]
-childhood   = st.session_state["childhood"]
-mind        = st.session_state["mind"]
-
-# --------------------------------------------------
-# Sidebar — System State
-# --------------------------------------------------
+childhood = st.session_state["childhood"]
+mind = st.session_state["mind"]
 
 with st.sidebar:
     st.header("🧬 System State")
@@ -69,8 +55,8 @@ with st.sidebar:
     st.subheader("Identity")
     st.json({
         "user_name": identity.user_name,
-        "system_name": identity.system_name,
-        "creator": identity.creator
+        "system_name": getattr(identity, "system_name", "A7DO"),
+        "creator": getattr(identity, "creator", "Alex Macleod"),
     })
 
     st.subheader("Emotion")
@@ -84,11 +70,6 @@ with st.sidebar:
 
     st.divider()
 
-    st.header("👤 Learned Profiles")
-    st.json(mind.profiles.summary())
-
-    st.divider()
-
     st.header("🌫 Background Density")
     st.json(mind.density.stats())
 
@@ -97,58 +78,60 @@ with st.sidebar:
     st.header("🗂 Memory Summary")
     st.json(memory.summary())
 
-# --------------------------------------------------
-# Main Interaction
-# --------------------------------------------------
+    st.divider()
+
+    st.header("👤 Profiles")
+    st.json(mind.profiles.summary())
+
+    st.divider()
+
+    st.header("✅ Learning Confidence")
+    st.write("**Candidates** = waiting to be confirmed")
+    st.write("**Facts** = promoted stable beliefs")
+
 
 user_text = st.text_input("Speak to A7DO")
 
 if user_text:
     result = mind.process(user_text)
+    st.session_state["last_result"] = result
 
-    # -------------------------
-    # Cognitive Timeline
-    # -------------------------
+result = st.session_state.get("last_result")
+
+if result:
     st.subheader("🧠 Cognitive Activity")
     for event in result.get("events", []):
         st.code(event)
 
-    # -------------------------
-    # Mind Path
-    # -------------------------
     st.subheader("🧭 Mind Path")
     st.write(" → ".join(result.get("path", [])))
 
-    # -------------------------
-    # Coherence (SAFE)
-    # -------------------------
     st.subheader("✅ Coherence")
-
     coh = result.get("coherence")
-
     if coh:
         st.metric("Coherence Score", round(coh.get("score", 0.0), 3))
         st.write(f"Status: **{coh.get('label', '—')}**")
     else:
         st.write("Coherence not evaluated for this path.")
 
-    # -------------------------
-    # Speech Gate
-    # -------------------------
+    st.subheader("🧠 Learning Confidence")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.write("### Candidates")
+        st.json(result.get("candidates", {}))
+
+    with col2:
+        st.write("### Facts (Promoted)")
+        st.json(result.get("facts", {}))
+
     st.subheader("🗣 Speech Gate")
     st.write(f"Action: **{result.get('speech_action', '—')}**")
 
-    # -------------------------
-    # Background Density
-    # -------------------------
-    st.subheader("🌫 Background Density")
+    st.subheader("🌫 Background Density State")
     st.json(result.get("density", {}))
 
-    # -------------------------
-    # Reasoning Signals (Z–Σ)
-    # -------------------------
     signals = result.get("signals")
-
     if signals and signals.get("z") and signals.get("sigma"):
         st.subheader(f"📈 Reasoning Signals (Z–Σ) — {signals.get('mode')}")
 
@@ -169,15 +152,9 @@ if user_text:
 
         st.pyplot(fig)
 
-    # -------------------------
-    # Final Output
-    # -------------------------
     st.subheader("💬 A7DO Response")
     st.markdown(f"> {result['answer']}")
 
-    # -------------------------
-    # Childhood Learning
-    # -------------------------
     if development.STAGES[development.index] in ["Birth", "Learning"]:
         st.subheader("🧒 Childhood Learning")
         st.json(childhood.summary())
