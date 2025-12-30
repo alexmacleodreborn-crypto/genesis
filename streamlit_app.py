@@ -140,8 +140,9 @@ if user_text:
         ax[1].set_title("Coherence Gate (Safe to Speak)")
 
         st.pyplot(fig)
-st.subheader("🗣 Speech Gate")
-st.write(f"Action: **{result.get('speech_action','—')}**")
+        
+    st.subheader("🗣 Speech Gate")
+    st.write(f"Action: **{result.get('speech_action','—')}**")
     # --------------------------------------------------
     # Final Output
     # --------------------------------------------------
