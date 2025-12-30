@@ -16,13 +16,15 @@ emotion = EmotionalState()
 memory = Memory()
 development = Development()
 multi_agent = MultiAgent()
-mind = A7DOMind(identity, emotion, memory, development, multi_agent)
-st.session_state["identity"] = identity
+childhood = Childhood()
+
+mind = A7DOMind(identity, emotion, memory, development, multi_agent, childhood)st.session_state["identity"] = identity
 st.session_state["emotion"] = emotion
 st.session_state["memory"] = memory
 st.session_state["development"] = development
 st.session_state["multi_agent"] = multi_agent
 st.session_state["mind"] = mind
+st.session_state["childhood"] = childhood
 
 with st.sidebar:
     st.header("🧠 A7DO")
