@@ -143,11 +143,12 @@ if user_text:
         
     st.subheader("🗣 Speech Gate")
     st.write(f"Action: **{result.get('speech_action','—')}**")
+    
     # --------------------------------------------------
     # Final Output
     # --------------------------------------------------
 
-    st.subheader("💬 A7DO Response")
+st.subheader("💬 A7DO Response")
     st.markdown(f"> {result['answer']}")
 
     # --------------------------------------------------
