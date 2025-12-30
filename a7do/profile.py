@@ -13,16 +13,68 @@ class PersonProfile:
         self.name = name
         self.created_at = datetime.utcnow().isoformat()
 
-        # Core profile fields
-        self.preferences = defaultdict(int)     # like / dislike
-        self.objects = defaultdict(int)         # bike, dog, project
-        self.actions = defaultdict(int)         # build, ride, think
-        self.topics = defaultdict(int)          # inferred themes
-        self.emotions = defaultdict(int)        # happy, frustrated
-
-        self.self_references = 0
         self.utterances = 0
-        
+        self.self_references = 0
+
+        self.preferences = defaultdict(int)
+        self.objects = defaultdict(int)
+        self.actions = defaultdict(int)
+        self.emotions = defaultdict(int)
+
+    # -----------------------------
+    # Language learning
+    # -----------------------------
+
+    def learn(self, text: str):
+        self.utterances += 1
+        t = text.lower()
+
+        # Self references
+        if re.search(r"\b(i|me|my|we|our)\b", t):
+            self.self_references += 1
+
+        # Preferences
+        for verb in ["like", "love", "enjoy"]:
+            m = re.search(rf"\bi {verb} ([a-z\s]+)", t)
+            if m:
+                self.preferences[m.group(1).strip()] += 1
+
+        for verb in ["hate", "dislike"]:
+            m = re.search(rf"\bi {verb} ([a-z\s]+)", t)
+            if m:
+                self.preferences[f"not:{m.group(1).strip()}"] += 1
+
+        # Objects
+        for word in ["bike", "dog", "cat", "project", "code", "system", "ai"]:
+            if word in t:
+                self.objects[word] += 1
+
+        # Actions
+        for verb in ["build", "create", "make", "ride", "learn", "think"]:
+            if verb in t:
+                self.actions[verb] += 1
+
+        # Emotion words
+        for emo in ["happy", "excited", "frustrated", "tired", "confused"]:
+            if emo in t:
+                self.emotions[emo] += 1
+
+    # -----------------------------
+    # Inspection
+    # -----------------------------
+
+    def summary(self) -> dict:
+        return {
+            "name": self.name,
+            "utterances": self.utterances,
+            "self_references": self.self_references,
+            "preferences": dict(self.preferences),
+            "objects": dict(self.objects),
+            "actions": dict(self.actions),
+            "emotions": dict(self.emotions),
+        }
+
+
 class ProfileManager:
     """
     Manages language profiles for users.
@@ -39,65 +91,3 @@ class ProfileManager:
 
     def summary(self):
         return {k: v.summary() for k, v in self.profiles.items()}
-
-    # --------------------------------------------------
-    # Language learning
-    # --------------------------------------------------
-
-    def learn(self, text: str):
-        self.utterances += 1
-        t = text.lower()
-
-        # -------------------------
-        # Self reference
-        # -------------------------
-        if re.search(r"\b(i|my|me|we|our)\b", t):
-            self.self_references += 1
-
-        # -------------------------
-        # Preferences
-        # -------------------------
-        likes = re.findall(r"\bi (like|love|enjoy)\b ([a-z\s]+)", t)
-        dislikes = re.findall(r"\bi (hate|dislike)\b ([a-z\s]+)", t)
-
-        for _, thing in likes:
-            self.preferences[thing.strip()] += 1
-
-        for _, thing in dislikes:
-            self.preferences[f"not:{thing.strip()}"] += 1
-
-        # -------------------------
-        # Objects (very simple noun capture)
-        # -------------------------
-        for word in ["bike", "dog", "cat", "project", "code", "system", "ai"]:
-            if word in t:
-                self.objects[word] += 1
-
-        # -------------------------
-        # Actions
-        # -------------------------
-        for verb in ["build", "make", "create", "ride", "learn", "think"]:
-            if verb in t:
-                self.actions[verb] += 1
-
-        # -------------------------
-        # Emotion words
-        # -------------------------
-        for emo in ["happy", "excited", "frustrated", "tired", "confused"]:
-            if emo in t:
-                self.emotions[emo] += 1
-
-    # --------------------------------------------------
-    # Inspection
-    # --------------------------------------------------
-
-    def summary(self) -> dict:
-        return {
-            "name": self.name,
-            "utterances": self.utterances,
-            "self_references": self.self_references,
-            "preferences": dict(self.preferences),
-            "objects": dict(self.objects),
-            "actions": dict(self.actions),
-            "emotions": dict(self.emotions),
-        }
