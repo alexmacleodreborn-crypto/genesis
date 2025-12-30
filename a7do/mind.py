@@ -4,7 +4,7 @@ import time
 class A7DOMind:
     """
     Central cognitive orchestrator.
-    NO code executes at import time.
+    Owns cognition state and exposes it for inspection.
     """
 
     def __init__(self, identity, emotion, memory, development, multi_agent, childhood):
@@ -16,6 +16,7 @@ class A7DOMind:
         self.childhood = childhood
 
         self.events = []
+        self.last_signals = None  # 👈 IMPORTANT
 
     # --------------------------------------------------
     # Internal logging
@@ -23,7 +24,7 @@ class A7DOMind:
 
     def emit(self, phase: str, message: str):
         self.events.append(f"[{phase}] {message}")
-        time.sleep(0.05)
+        time.sleep(0.02)
 
     # --------------------------------------------------
     # Main cognitive cycle
@@ -35,7 +36,7 @@ class A7DOMind:
         self.emit("INPUT", "User input received")
 
         # ----------------------------------------------
-        # Childhood learning (passive, stage-gated)
+        # Childhood learning (0–5)
         # ----------------------------------------------
 
         if self.development.STAGES[self.development.index] in ["Birth", "Learning"]:
@@ -49,7 +50,7 @@ class A7DOMind:
                 self.emit("CHILDHOOD", "Learning burst ended")
 
         # ----------------------------------------------
-        # User identity capture
+        # User self-introduction
         # ----------------------------------------------
 
         if self.identity.is_user_introduction(text):
@@ -58,13 +59,15 @@ class A7DOMind:
             self.memory.add("identity", f"User is {self.identity.user_name}")
             self.emit("OUTPUT", "Identity stored")
 
+            self.last_signals = None
+
             return self._result(
                 f"Nice to meet you, {self.identity.user_name}.",
-                {}
+                None
             )
 
         # ----------------------------------------------
-        # System identity (recognition mode)
+        # System identity (recognition)
         # ----------------------------------------------
 
         if self.identity.is_system_identity_question(text):
@@ -72,6 +75,7 @@ class A7DOMind:
             self.emit("THINKING", "Recognition processing")
 
             reasoning = self.multi_agent.run(text, mode="recognition")
+            self.last_signals = reasoning["signals"]
 
             self.emit("OUTPUT", "Identity answer ready")
 
@@ -81,7 +85,7 @@ class A7DOMind:
             )
 
         # ----------------------------------------------
-        # Emotion
+        # Emotional update
         # ----------------------------------------------
 
         self.emit("EMOTION", "Updating emotional state")
@@ -93,6 +97,8 @@ class A7DOMind:
 
         self.emit("THINKING", "Deliberative reasoning")
         reasoning = self.multi_agent.run(text, mode="deliberation")
+
+        self.last_signals = reasoning["signals"]
 
         # ----------------------------------------------
         # Memory
