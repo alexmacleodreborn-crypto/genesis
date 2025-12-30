@@ -26,7 +26,28 @@ class A7DOMind:
         self.events.clear()
 
         self.emit("INPUT", "User input received")
+# User identity capture
+if self.identity.is_user_introduction(user_input):
+    self.emit("IDENTITY", "User identity detected")
+    self.identity.capture_user_identity(user_input)
+    answer = f"Nice to meet you, {self.identity.user_name}."
+    
+    self.emit("MEMORY", "Storing user identity")
+    self.memory.add(
+        kind="identity",
+        content=f"User is {self.identity.user_name}",
+        emotion=self.emotion.label
+    )
 
+    self.emit("OUTPUT", "User identity stored")
+    return {
+        "answer": answer,
+        "events": self.events,
+        "emotion": self.emotion.export(),
+        "development": self.development.export(),
+        "memory": self.memory.recent(),
+        "reasoning": {}
+    }
         # Identity gate
         if self.identity.is_identity_question(user_input):
             self.emit("IDENTITY", "Identity question detected")
