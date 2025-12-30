@@ -7,7 +7,7 @@ from a7do.emotional_state import EmotionalState
 from a7do.memory import Memory
 from a7do.development import Development
 from a7do.multi_agent import MultiAgent
-from a7do.mind import A7DOMind
+
 
 st.set_page_config(page_title="A7DO – Mind Inspector", layout="wide")
 
