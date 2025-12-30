@@ -1,7 +1,7 @@
 import time
 
 class A7DOMind:
-    def __init__(self, identity, emotion, memory, development, multi_agent):
+    def __init__(self, identity, emotion, memory, development, multi_agent, childhood):
         self.identity = identity
         self.emotion = emotion
         self.memory = memory
