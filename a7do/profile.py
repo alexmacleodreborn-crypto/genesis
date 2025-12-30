@@ -1,4 +1,3 @@
-import re
 from collections import defaultdict
 from datetime import datetime
 
@@ -6,84 +5,66 @@ from datetime import datetime
 class PersonProfile:
     """
     Language-derived profile of a person.
-    Built gradually from how they speak.
+    Built from tagged experience, not prompts.
     """
 
-    def __init__(self, name: str | None = None):
+    def __init__(self, name=None):
         self.name = name
         self.created_at = datetime.utcnow().isoformat()
 
         self.utterances = 0
-        self.self_references = 0
 
-        self.preferences = defaultdict(int)
-        self.objects = defaultdict(int)
-        self.actions = defaultdict(int)
+        # Domain familiarity (maths, AI, Sandy's Law, etc.)
+        self.domains = defaultdict(int)
+
+        # Social / affective indicators
+        self.references = defaultdict(int)
         self.emotions = defaultdict(int)
 
-    # -----------------------------
-    # Language learning
-    # -----------------------------
+    # --------------------------------------------------
+    # Learning from tagged input
+    # --------------------------------------------------
 
-    def learn(self, text: str):
+    def learn(self, text: str, tags_map: dict):
+        """
+        Learn from a single utterance using multi-domain tags.
+        """
         self.utterances += 1
-        t = text.lower()
 
-        # Self references
-        if re.search(r"\b(i|me|my|we|our)\b", t):
-            self.self_references += 1
+        # Accumulate domain exposure
+        for domain, count in tags_map.items():
+            self.domains[domain] += count
 
-        # Preferences
-        for verb in ["like", "love", "enjoy"]:
-            m = re.search(rf"\bi {verb} ([a-z\s]+)", t)
-            if m:
-                self.preferences[m.group(1).strip()] += 1
+        # Simple social inference
+        if "relationship" in tags_map:
+            self.references["self"] += 1
 
-        for verb in ["hate", "dislike"]:
-            m = re.search(rf"\bi {verb} ([a-z\s]+)", t)
-            if m:
-                self.preferences[f"not:{m.group(1).strip()}"] += 1
+        if "emotion" in tags_map:
+            self.emotions["expressed"] += 1
 
-        # Objects
-        for word in ["bike", "dog", "cat", "project", "code", "system", "ai"]:
-            if word in t:
-                self.objects[word] += 1
-
-        # Actions
-        for verb in ["build", "create", "make", "ride", "learn", "think"]:
-            if verb in t:
-                self.actions[verb] += 1
-
-        # Emotion words
-        for emo in ["happy", "excited", "frustrated", "tired", "confused"]:
-            if emo in t:
-                self.emotions[emo] += 1
-
-    # -----------------------------
+    # --------------------------------------------------
     # Inspection
-    # -----------------------------
+    # --------------------------------------------------
 
     def summary(self) -> dict:
         return {
             "name": self.name,
             "utterances": self.utterances,
-            "self_references": self.self_references,
-            "preferences": dict(self.preferences),
-            "objects": dict(self.objects),
-            "actions": dict(self.actions),
+            "domains": dict(self.domains),
+            "references": dict(self.references),
             "emotions": dict(self.emotions),
         }
 
 
 class ProfileManager:
     """
-    Manages language profiles for users.
+    Manages multiple person profiles.
     """
 
     def __init__(self):
         self.profiles = {}
 
-    def get_or_create(self, name: str | None):
+    def get_or_create(self, name):
         key = name or "unknown"
         if key not in self.profiles:
             self.profiles[key] = PersonProfile(name)
