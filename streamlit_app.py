@@ -1,102 +1,54 @@
-"""
-Streamlit Front-End for A7DO
-
-This file is the main entry point for interacting with the A7DO cognitive system.
-It provides:
-- Chat interface
-- Character panel (identity, emotion, development)
-- Memory summary
-- Recent memory viewer
-- Internal state snapshot
-
-All cognitive logic lives in the a7do/ package.
-"""
-
 import streamlit as st
+import matplotlib.pyplot as plt
 
-# Import the mind + memory systems
+from a7do.identity import Identity
+from a7do.emotional_state import EmotionalState
+from a7do.memory import Memory
+from a7do.development import Development
+from a7do.multi_agent import MultiAgent
 from a7do.mind import A7DOMind
-from a7do.memory import MemorySystem
 
+st.set_page_config(page_title="A7DO", layout="wide")
 
-# -----------------------------------------------------------------------------
-# Initialization
-# -----------------------------------------------------------------------------
+identity = Identity()
+emotion = EmotionalState()
+memory = Memory()
+development = Development()
+multi_agent = MultiAgent()
 
-@st.cache_resource
-def init_system():
-    """
-    Create the Mind and Memory systems once per session.
-    """
-    mind = A7DOMind()
-    memory = MemorySystem()
-    mind.attach_memory(memory)
-    return mind, memory
+mind = A7DOMind(identity, emotion, memory, development, multi_agent)
 
+with st.sidebar:
+    st.header("🧠 A7DO")
+    st.markdown(identity.character_panel())
+    st.markdown(emotion.character_panel())
+    st.markdown(development.character_panel())
+    st.json(memory.summary())
 
-mind, memory = init_system()
+st.title("A7DO Cognitive Interface")
 
+user_input = st.text_input("Speak to A7DO")
 
-# -----------------------------------------------------------------------------
-# Page Layout
-# -----------------------------------------------------------------------------
+if user_input:
+    result = mind.process(user_input)
 
-st.set_page_config(
-    page_title="A7DO Cognitive System",
-    page_icon="🧠",
-    layout="wide",
-)
+    st.subheader("🧬 Cognitive Activity")
+    for event in result["events"]:
+        st.markdown(f"**[{event.phase}]** {event.message}")
 
-st.title("🧠 A7DO Cognitive System")
-st.write("A modular artificial mind with identity, emotion, memory, development, and internal reasoning.")
+    if result["reasoning"]:
+        z = result["reasoning"]["z"]
+        sigma = result["reasoning"]["sigma"]
 
+        fig, ax = plt.subplots(2, 1, figsize=(8, 5))
+        ax[0].plot(z, label="Inhibition (Z)")
+        ax[0].plot(sigma, label="Chaos (Σ)")
+        ax[0].legend()
 
-# -----------------------------------------------------------------------------
-# Sidebar: Character Panel
-# -----------------------------------------------------------------------------
+        coherence = [s / (zv + 1e-3) for s, zv in zip(sigma, z)]
+        ax[1].plot(coherence)
+        ax[1].axhline(0.6, linestyle="--", color="yellow")
+        st.pyplot(fig)
 
-st.sidebar.header("Character Panel")
-panel_text = mind.build_character_panel()
-st.sidebar.markdown(panel_text)
-
-st.sidebar.header("Memory Summary")
-st.sidebar.markdown(memory.build_memory_summary())
-
-
-# -----------------------------------------------------------------------------
-# Main Chat Interface
-# -----------------------------------------------------------------------------
-
-st.subheader("Chat with A7DO")
-
-user_input = st.text_input("Your message:", "")
-
-if st.button("Send"):
-    if user_input.strip():
-        result = mind.process_question(user_input)
-
-        st.markdown("### A7DO's Response")
-        st.write(result["answer"])
-
-        # Internal state snapshot
-        with st.expander("Internal State Snapshot"):
-            st.json(mind.export_state())
-
-    else:
-        st.warning("Please enter a message before sending.")
-
-
-# -----------------------------------------------------------------------------
-# Memory Viewer
-# -----------------------------------------------------------------------------
-
-st.subheader("Recent Memories")
-
-recent = memory.export_recent(30)
-for m in recent:
-    st.markdown(
-        f"**[{m['step_index']}] {m['kind']}** — {m['content']}  \n"
-        f"*Tags:* {', '.join(m['tags'])}  \n"
-        f"*Emotion:* {m['emotion_valence']} ({m['emotion_label']})"
-    )
-    st.markdown("---")
+    st.subheader("💬 Final Answer")
+    st.markdown(f"> {result['answer']}\n\n_Thought process complete._")
