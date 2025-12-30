@@ -12,7 +12,7 @@ from a7do.mind import A7DOMind
 st.set_page_config(page_title="A7DO Cognitive Interface", layout="wide")
 
 st.title("🧠 A7DO — Cognitive Interface")
-st.caption("Developmental learning + coherence-regulated reasoning")
+st.caption("Developmental cognition with entity grounding")
 
 if "mind" not in st.session_state:
     identity = Identity()
@@ -36,31 +36,25 @@ if "mind" not in st.session_state:
         "emotion": emotion,
         "memory": memory,
         "development": development,
-        "multi_agent": multi_agent,
-        "childhood": childhood,
         "mind": mind,
         "last_result": None,
     })
 
+mind = st.session_state["mind"]
 identity = st.session_state["identity"]
 emotion = st.session_state["emotion"]
 memory = st.session_state["memory"]
 development = st.session_state["development"]
-childhood = st.session_state["childhood"]
-mind = st.session_state["mind"]
 
 with st.sidebar:
     st.header("🧬 System State")
 
     st.subheader("Identity")
     st.json({
-        "user_name": identity.user_name,
-        "system_name": identity.system_name,
-        "creator": identity.creator
+        "user": identity.user_name,
+        "creator": identity.creator,
+        "system": identity.system_name
     })
-
-    st.subheader("Emotion")
-    st.json(emotion.export())
 
     st.subheader("Development")
     st.json({
@@ -68,80 +62,40 @@ with st.sidebar:
         "index": development.index
     })
 
-    st.divider()
-
-    st.header("📚 Foundational Language Progress")
+    st.subheader("Foundational Language")
     st.json(mind.curriculum.peek_progress())
 
     if mind.last_curriculum_packet:
-        st.write("**Latest drip**")
+        st.write("Latest language drip")
         st.json(mind.last_curriculum_packet)
 
-    st.divider()
+    st.subheader("🧩 Entity Graph")
+    st.json(mind.entities.summary())
 
-    st.header("🌫 Background Density")
+    st.subheader("🌫 Background Density")
     st.json(mind.density.stats())
 
-    st.divider()
-
-    st.header("🗂 Memory Summary")
+    st.subheader("🗂 Memory")
     st.json(memory.summary())
-
-    st.divider()
-
-    st.header("👤 Profiles")
-    st.json(mind.profiles.summary())
 
 user_text = st.text_input("Speak to A7DO")
 
 if user_text:
-    result = mind.process(user_text)
-    st.session_state["last_result"] = result
+    st.session_state["last_result"] = mind.process(user_text)
 
 result = st.session_state.get("last_result")
 
 if result:
     st.subheader("🧠 Cognitive Activity")
-    for event in result.get("events", []):
-        st.code(event)
+    for e in result["events"]:
+        st.code(e)
 
     st.subheader("🧭 Mind Path")
-    st.write(" → ".join(result.get("path", [])))
+    st.write(" → ".join(result["path"]))
 
-    st.subheader("✅ Coherence")
-    coh = result.get("coherence")
-    if coh:
-        st.metric("Coherence Score", round(coh.get("score", 0.0), 3))
-        st.write(f"Status: **{coh.get('label', '—')}**")
-    else:
-        st.write("Coherence not evaluated for this path.")
+    if result.get("coherence"):
+        st.subheader("✅ Coherence")
+        st.metric("Score", round(result["coherence"]["score"], 3))
 
-    st.subheader("🌫 Background Density State")
-    st.json(result.get("density", {}))
-
-    signals = result.get("signals")
-    if signals and signals.get("z") and signals.get("sigma"):
-        st.subheader(f"📈 Reasoning Signals (Z–Σ) — {signals.get('mode')}")
-
-        z = signals["z"]
-        sigma = signals["sigma"]
-
-        fig, ax = plt.subplots(2, 1, figsize=(9, 5))
-
-        ax[0].plot(z, label="Z (Constraint)")
-        ax[0].plot(sigma, label="Σ (Exploration)")
-        ax[0].legend()
-        ax[0].set_title("Constraint vs Exploration")
-
-        coherence_trace = [s / (zv + 1e-3) for s, zv in zip(sigma, z)]
-        ax[1].plot(coherence_trace)
-        ax[1].axhline(0.6, linestyle="--", color="yellow")
-        ax[1].set_title("Coherence Gate")
-
-        st.pyplot(fig)
-
-    st.subheader("💬 A7DO Response")
+    st.subheader("💬 Response")
     st.markdown(f"> {result['answer']}")
-
-    st.subheader("📚 Foundational Learning (Latest)")
-    st.json(result.get("last_curriculum_packet"))
