@@ -4,9 +4,10 @@ Streamlit Front-End for A7DO
 This file is the main entry point for interacting with the A7DO cognitive system.
 It provides:
 - Chat interface
-- Character panel
+- Character panel (identity, emotion, development)
 - Memory summary
-- Timeline export (optional)
+- Recent memory viewer
+- Internal state snapshot
 
 All cognitive logic lives in the a7do/ package.
 """
@@ -47,7 +48,7 @@ st.set_page_config(
 )
 
 st.title("🧠 A7DO Cognitive System")
-st.write("A modular artificial mind with identity, emotion, memory, and development.")
+st.write("A modular artificial mind with identity, emotion, memory, development, and internal reasoning.")
 
 
 # -----------------------------------------------------------------------------
@@ -77,7 +78,7 @@ if st.button("Send"):
         st.markdown("### A7DO's Response")
         st.write(result["answer"])
 
-        # Timeline export (optional)
+        # Internal state snapshot
         with st.expander("Internal State Snapshot"):
             st.json(mind.export_state())
 
