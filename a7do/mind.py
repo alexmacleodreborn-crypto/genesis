@@ -144,7 +144,9 @@ class A7DOMind:
         # --------------------------------------------------------------
         # final_answer = run_multi_agent_cycle(question, self)
         # For now, simple echo:
-        final_answer = f"I've received your question: {question}"
+        from a7do.multi_agent import run_multi_agent_cycle
+final_answer = run_multi_agent_cycle(question, self)
+
 
         # Emotional update (neutral)
         self.emotional_state.update_from_valence(
