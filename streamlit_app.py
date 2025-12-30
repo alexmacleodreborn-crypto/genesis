@@ -81,6 +81,10 @@ with st.sidebar:
     st.header("🗂 Memory (Summary)")
     st.json(memory.summary())
 
+with st.sidebar:
+    st.header("👤 Language Profile")
+    st.json(mind.profiles.summary())
+    
 # --------------------------------------------------
 # Main Interaction
 # --------------------------------------------------
