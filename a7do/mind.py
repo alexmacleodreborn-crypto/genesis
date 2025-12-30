@@ -7,6 +7,7 @@ from .entity_facts import EntityFactLedger
 
 from a7do.event_frame import EventMemory
 from a7do.reoccurrence import ReoccurrenceTracker
+from a7do.role_guard import LinguisticRoleGuard
 
 
 class A7DOMind:
@@ -22,16 +23,21 @@ class A7DOMind:
         self.entities = EntityGraph()
         self.facts = EntityFactLedger()
 
-        # FLOW LAYER
-        self.events = EventMemory(bind_window_s=20)     # B: temporal binding window
+        # Flow layer
+        self.events = EventMemory(bind_window_s=20)
         self.reoccurrence = ReoccurrenceTracker()
 
-        self.unbound_names = {}   # name -> {count,last_seen,source}
+        # Linguistic Role Guard
+        self.lrg = LinguisticRoleGuard()
 
+        # Unbound proper nouns waiting for an eligible target entity
+        self.unbound_names = {}  # label -> {count,last_seen,source}
+
+        # Debug / inspector
         self.log = []
         self.path = []
 
-        # lightweight lexicons for “sound/visual/environment/feelings/actions”
+        # Lightweight signals
         self._emo_words = {"excited", "happy", "sad", "anxious", "calm", "angry", "worried", "scared"}
         self._env_words = {"park", "home", "gate", "street", "garden", "room", "vet", "car", "beach"}
         self._visual_words = {"see", "look", "bright", "dark", "colour", "color", "red", "blue", "yellow", "green"}
@@ -46,8 +52,6 @@ class A7DOMind:
         time.sleep(0.001)
 
     # ----------------------------
-    # Helpers
-    # ----------------------------
 
     def _ensure_user_entity(self):
         user = self.entities.find_by_name_or_alias(self.identity.user_name)
@@ -55,14 +59,6 @@ class A7DOMind:
             user = self.entities.create("person")
             user.add_name(self.identity.user_name)
         return user
-
-    def _extract_surface_labels(self, text: str):
-        # Keep it conservative: capitalized tokens become “labels”, not entities.
-        labels = []
-        for w in re.findall(r"[A-Za-z']+", text):
-            if w.istitle():
-                labels.append(w)
-        return list(dict.fromkeys(labels))
 
     def _extract_signals(self, text: str):
         t = text.lower()
@@ -80,85 +76,143 @@ class A7DOMind:
 
         return modalities, emotions, env, actions
 
-    def _detect_entities_from_text(self, text: str, user_entity_id: str):
+    def _detect_entities_from_text(self, text: str, speaker_entity_id: str):
         """
         Conservative entity detection:
-        - Dog mention creates animal entity (structure only)
-        - Names remain unbound until we have an entity in the same event
+        - 'dog' creates an animal entity
+        - no names bound here
         """
         t = text.lower()
         created = []
 
-        # Dog entity
         if "dog" in t:
             dog = self.entities.create("animal")
             dog.add_attribute("species:dog", 1.0)
-            dog.link("owner", user_entity_id)
+            dog.link("owner", speaker_entity_id)
             created.append(dog)
-            self.emit("ENTITY", f"Detected animal entity {dog.id}")
 
-            # candidate identity fact (needs source+time via ledger rules)
             source = "childhood" if self.childhood.is_simple_input(text) else "adult"
+
+            # identity:dog candidate
             self.facts.add_candidate(dog.id, "identity:dog", source)
             self.facts.try_promote_identity(dog.id, "identity:dog")
 
+            self.emit("ENTITY", f"Detected animal entity {dog.id}")
+
         return created
 
-    def _handle_names_aliases(self, text: str, current_entities: list, source: str):
-        """
-        Names:
-        - If label already maps to an entity => alias candidate
-        - Otherwise => unbound label candidate
-        - If entities exist in this event, bind unbound labels to them (as 'name:' candidates)
-        """
-        labels = self._extract_surface_labels(text)
+    # ----------------------------
+    # Binding logic with LRG
+    # ----------------------------
 
-        for label in labels:
-            e = self.entities.find_by_name_or_alias(label)
-            if e:
-                self.facts.add_candidate(e.id, f"alias:{label}", "adult")
-                self.facts.try_promote_alias(e.id, label)
-                self.emit("ALIAS", f"Alias candidate '{label}' for {e.id}")
+    def _bind_proper_nouns(self, text: str, evt, created_entities: list, speaker, source: str):
+        """
+        Uses Linguistic Role Guard (LRG) rules:
+        - PRONOUN / DETERMINER never bind as names
+        - PROPER_NOUN binds only in naming contexts and only to eligible target
+        - Aliases only promoted for already-known entities (and via time+repetition in ledger)
+        """
+        roles = self.lrg.classify(text)
+        intent = self.lrg.speaker_intent(roles)
+        naming_context = self.lrg.is_naming_context(text)
+
+        # Track which known entities are referenced in this utterance
+        referenced_entities = []
+
+        for r in roles:
+            if r.role != "PROPER_NOUN":
+                continue
+            existing = self.entities.find_by_name_or_alias(r.text)
+            if existing:
+                referenced_entities.append(existing)
+
+        # Possessive reinforcement: "my dog ..."
+        if intent["mentions_my"] and created_entities:
+            # strengthen ownership candidate (still gated via identity rules)
+            for ent in created_entities:
+                self.facts.add_candidate(ent.id, "rel:owned_by_speaker", source)
+                self.facts.try_promote_identity(ent.id, "rel:owned_by_speaker")
+                self.emit("REL", f"Ownership candidate for {ent.id} (my ...)")
+
+        # Speaker naming: "I am Alex ..." should never bind to animal.
+        # We allow only reinforcing speaker entity, not creating a new entity.
+        if intent["mentions_i"] and naming_context and not created_entities:
+            for r in roles:
+                if r.role == "PROPER_NOUN":
+                    # optional: track as alias for speaker; do not overwrite creator anchor
+                    self.emit("SPEAKER", f"Speaker proper noun observed: {r.text}")
+            # do not bind further in speaker-centric utterance
+            return
+
+        # Determine eligible targets for naming
+        # Priority: entities created this utterance (e.g., dog)
+        # Else: referenced entity (if utterance is about someone already known)
+        targets = []
+        if created_entities:
+            targets = created_entities
+        elif referenced_entities:
+            targets = referenced_entities
+
+        # Process PROPER_NOUNs
+        for r in roles:
+            if r.role != "PROPER_NOUN":
+                continue
+
+            label = r.text
+            existing = self.entities.find_by_name_or_alias(label)
+
+            if existing:
+                # If it's already a known entity, consider alias candidate only if the text suggests aliasing
+                if "nickname" in text.lower() or "known as" in text.lower():
+                    self.facts.add_candidate(existing.id, f"alias:{label}", "adult")
+                    self.facts.try_promote_alias(existing.id, label)
+                    self.emit("ALIAS", f"Alias reinforcement '{label}' -> {existing.id}")
+                # Otherwise it's just a reference; no binding
+                continue
+
+            # Unknown proper noun: only bind in naming context AND only if we have a target
+            if naming_context and targets:
+                for ent in targets:
+                    ent.add_name(label)
+                    self.facts.add_candidate(ent.id, f"name:{label}", source)
+                    self.facts.try_promote_identity(ent.id, f"name:{label}")
+                    self.emit("BIND", f"Bound name '{label}' -> {ent.id}")
+                    self.events.attach_entity(evt, ent.id)
             else:
+                # store as unbound name candidate (for later binding when entity appears in same event)
                 self.unbound_names[label] = {
                     "count": self.unbound_names.get(label, {}).get("count", 0) + 1,
                     "last_seen": time.time(),
                     "source": source
                 }
-                self.emit("NAME", f"Unbound label '{label}'")
+                self.emit("NAME", f"Unbound proper noun '{label}' (no naming context or target)")
 
-        # bind unbound names to entities in this event (safe: only binds when entity is present)
-        if current_entities and self.unbound_names:
-            for name, info in list(self.unbound_names.items()):
-                for ent in current_entities:
-                    ent.add_name(name)
-                    self.facts.add_candidate(ent.id, f"name:{name}", info["source"])
-                    self.facts.try_promote_identity(ent.id, f"name:{name}")
-                    self.emit("BIND", f"Bound '{name}' -> {ent.id}")
-                del self.unbound_names[name]
+        # Late binding: if entity exists and unbound proper nouns exist AND the utterance is naming-context
+        if naming_context and targets and self.unbound_names:
+            for label, info in list(self.unbound_names.items()):
+                for ent in targets:
+                    ent.add_name(label)
+                    self.facts.add_candidate(ent.id, f"name:{label}", info["source"])
+                    self.facts.try_promote_identity(ent.id, f"name:{label}")
+                    self.emit("BIND", f"Late-bound '{label}' -> {ent.id}")
+                    self.events.attach_entity(evt, ent.id)
+                del self.unbound_names[label]
 
     # ----------------------------
-    # Auto “future impressions” (reinforcement seeds)
+    # Auto future impressions
     # ----------------------------
 
-    def _seed_future_impressions(self, evt, user_entity_id: str):
-        """
-        Creates low-confidence reinforcement seeds.
-        These are not facts. They are reminders that can help future retrieval.
-        Stored as memory kind='impression' with very light tags.
-        """
-        # Example: if event includes env + emotion + any entity beyond user
+    def _seed_future_impressions(self, evt):
         if not evt.entities:
             return
 
-        # keep tiny: one seed per event
         seed = {
             "event_id": evt.event_id,
             "entities": evt.entities,
             "environments": list(evt.environments.keys()),
             "emotions": list(evt.emotions.keys()),
             "actions": list(evt.actions.keys()),
-            "labels": evt.labels[-6:],
+            "labels": evt.labels[-8:],
         }
 
         tags = ["impression", "flow"]
@@ -173,15 +227,11 @@ class A7DOMind:
     # ----------------------------
 
     def _retrieve_context_for_label(self, label: str):
-        """
-        Pulls relevant silo events for a name/alias label.
-        """
         e = self.entities.find_by_name_or_alias(label)
         if not e:
             return None, None
 
         frames = self.events.silo_events(e.id, n=12)
-        # Create a concise “front of mind” context
         lines = []
         for f in frames[-8:]:
             emo = ",".join(list(f.emotions.keys())[:3])
@@ -195,9 +245,8 @@ class A7DOMind:
     def _answer_who_is(self, label: str):
         e, ctx = self._retrieve_context_for_label(label)
         if not e:
-            return f"I don’t know who '{label}' is yet—tell me more about them (and keep it consistent over time)."
+            return f"I don’t know who '{label}' is yet—tell me more about them consistently over time."
 
-        # Facts (if promoted)
         f = self.facts.facts.get(e.id, {})
         aliases = list(self.facts.aliases.get(e.id, set()))
 
@@ -209,7 +258,6 @@ class A7DOMind:
             bits.append(f"Known name(s): {', '.join(sorted(set(name_facts)))}")
         if aliases:
             bits.append(f"Nicknames/aliases: {', '.join(sorted(set(aliases)))}")
-
         if ctx:
             bits.append("Recent life-stream context:\n" + ctx)
 
@@ -228,18 +276,23 @@ class A7DOMind:
         domains = list(tags_map.keys())
         self.emit("TAGGING", f"Domains: {domains if domains else ['none']}")
 
-        user = self._ensure_user_entity()
+        speaker = self._ensure_user_entity()
         source = "childhood" if self.childhood.is_simple_input(text) else "adult"
 
-        # Event frame (temporal binding = B)
+        # Event frame (temporal binding)
         evt = self.events.start_or_bind()
         evt.add_utterance(text)
         evt.domains = list(dict.fromkeys(evt.domains + domains))
-        evt.labels = list(dict.fromkeys(evt.labels + self._extract_surface_labels(text)))
 
-        # attach user to event always
-        self.events.attach_entity(evt, user.id)
+        # Add roles-based labels (PROPER_NOUN only, and never PRONOUN/DETERMINER)
+        roles = self.lrg.classify(text)
+        proper_labels = [r.text for r in roles if r.role == "PROPER_NOUN"]
+        evt.labels = list(dict.fromkeys(evt.labels + proper_labels))
 
+        # Attach speaker to event
+        self.events.attach_entity(evt, speaker.id)
+
+        # Signals
         modalities, emotions, env, actions = self._extract_signals(text)
         for k, v in modalities.items():
             evt.modalities[k] = evt.modalities.get(k, 0.0) + v
@@ -253,30 +306,30 @@ class A7DOMind:
         self.emit("EVENT", f"Bound to {evt.event_id} (window={self.events.bind_window_s}s)")
 
         # Entities from this utterance
-        created = self._detect_entities_from_text(text, user.id)
+        created = self._detect_entities_from_text(text, speaker.id)
         for ent in created:
             self.events.attach_entity(evt, ent.id)
 
-        # Names / aliases / nicknames
-        self._handle_names_aliases(text, created, source)
+        # LRG binding (names/aliases/ownership)
+        self._bind_proper_nouns(text, evt, created, speaker, source)
 
-        # Update reoccurrence (reinforcement layer)
+        # Reoccurrence
         self.reoccurrence.ingest_event(evt.entities, evt.environments, evt.emotions)
         self.emit("REOCCUR", "Reoccurrence updated")
 
-        # Store episodic memory (light)
+        # Memory
         self.memory.add(kind="utterance", content=text, tags=domains)
         self.emit("MEMORY", "Episodic stored")
 
-        # Seed “future impressions” (low confidence, avoids overload)
-        self._seed_future_impressions(evt, user.id)
+        # Impressions
+        self._seed_future_impressions(evt)
 
-        # Questions: “who is …”
+        # Queries
         m = re.search(r"\bwho is\s+([A-Za-z']+)\b", text.lower())
         if m:
             label = m.group(1).strip()
-            # keep original capitalization if user used it
-            for L in evt.labels:
+            # try to restore original casing if user provided it in PROPER labels
+            for L in proper_labels:
                 if L.lower() == label:
                     label = L
                     break
@@ -285,12 +338,10 @@ class A7DOMind:
             self.emit("OUTPUT", "Answer ready")
             return self._result(answer, evt)
 
-        # “who am i”
         if self.identity.is_user_identity_question(text):
             self.emit("OUTPUT", "Answer ready")
             return self._result(f"You are {self.identity.user_name}, the creator of this system.", evt)
 
-        # Default safe response (still shows flow)
         self.emit("OUTPUT", "Acknowledged")
         return self._result("I’m tracking this as part of the current life-flow.", evt)
 
