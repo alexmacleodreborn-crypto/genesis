@@ -1,6 +1,7 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 
+from a7do.childhood import Childhood
 from a7do.identity import Identity
 from a7do.emotional_state import EmotionalState
 from a7do.memory import Memory
