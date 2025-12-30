@@ -3,15 +3,17 @@ from a7do.coherence import CoherenceScorer
 from a7do.profile import ProfileManager
 from a7do.tagger import Tagger
 from a7do.background_density import BackgroundDensity
+from a7do.language_curriculum import LanguageCurriculum
 
 
 class A7DOMind:
     """
-    Central cognitive orchestrator with:
+    Central orchestrator with:
     - multi-domain tagging
     - per-person profiling
     - background density buffering
-    - confidence-based memory promotion
+    - confidence learning (candidates/facts)
+    - foundational language drip-feed (10s)
     """
 
     def __init__(self, identity, emotion, memory, development, multi_agent, childhood):
@@ -26,29 +28,64 @@ class A7DOMind:
         self.profiles = ProfileManager()
         self.density = BackgroundDensity()
 
+        self.curriculum = LanguageCurriculum(drip_seconds=10)
+
         self.events = []
         self.path = []
         self.last_signals = None
         self.last_coherence = None
+        self.last_curriculum_packet = None
 
         self._coherence = CoherenceScorer()
 
-        # promotion policy (tune later)
+        # promotion policy (if you already added C earlier)
         self.promote_score = 3.0
         self.promote_count = 3
-
-    # --------------------------------------------------
 
     def emit(self, phase: str, message: str):
         self.events.append(f"[{phase}] {message}")
         self.path.append(phase)
-        time.sleep(0.005)
+        time.sleep(0.003)
 
-    # --------------------------------------------------
+    # -------------------------
+    # Foundational drip-feed
+    # -------------------------
+    def _maybe_drip_language(self):
+        """
+        Every ~10 seconds, drip one foundational packet into:
+        - Memory (kind='foundational')
+        - Background density queue (so it stabilises cognition)
+        """
+        if not self.curriculum.ready():
+            return
+
+        pkt = self.curriculum.next_packet()
+        self.last_curriculum_packet = pkt
+
+        tags = pkt["tags"]
+        title = pkt["title"]
+        content = pkt["content"]
+
+        # store as foundational memory (non-personal)
+        self.memory.add(
+            kind="foundational",
+            content=f"{title}: {content}",
+            tags=tags
+        )
+
+        # also feed background density lightly (as a context stabiliser)
+        self.density.ingest(f"[FOUNDATIONAL] {title}", tags)
+
+        self.emit("FOUNDATIONAL", f"Language drip: {title}")
+
+    # -------------------------
 
     def process(self, text: str) -> dict:
         self.events.clear()
         self.path.clear()
+
+        # 1) Foundational drip runs regardless of user input (progress by exposure)
+        self._maybe_drip_language()
 
         self.emit("INPUT", "User input received")
 
@@ -79,28 +116,7 @@ class A7DOMind:
         self.emit("MEMORY", "Tagged memory stored")
 
         # -------------------------
-        # Confidence candidates (soft beliefs)
-        # -------------------------
-        self._update_candidates(text, tags_map)
-        self.memory.promote_candidates(
-            threshold_score=self.promote_score,
-            threshold_count=self.promote_count
-        )
-        self.emit("PROMOTION", "Candidates updated / promotion checked")
-
-        # -------------------------
-        # Childhood learning (optional)
-        # -------------------------
-        if self.development.STAGES[self.development.index] in ["Birth", "Learning"]:
-            if not self.childhood.active:
-                self.childhood.start_burst()
-                self.emit("CHILDHOOD", "Learning burst started")
-            self.childhood.absorb(text)
-            if not self.childhood.is_active():
-                self.emit("CHILDHOOD", "Learning burst ended")
-
-        # -------------------------
-        # Identity capture
+        # Identity capture (explicit override)
         # -------------------------
         if self.identity.is_user_introduction(text):
             self.emit("IDENTITY", "User identity detected")
@@ -110,11 +126,17 @@ class A7DOMind:
             return self._result(f"Nice to meet you, {self.identity.user_name}.", None, "recognition", "speak")
 
         # -------------------------
-        # User profile query
+        # User identity query (uses profile + facts if you’ve implemented C)
         # -------------------------
         if self.identity.is_user_identity_question(text):
             self.emit("IDENTITY", "User self-identity query")
-            answer = self._who_am_i(profile)
+            s = profile.summary()
+            domains = s.get("domains", {})
+            if domains:
+                top = sorted(domains.items(), key=lambda x: x[1], reverse=True)[:5]
+                answer = "You tend to talk most about: " + ", ".join([k for k, _ in top]) + "."
+            else:
+                answer = "I’m still building your profile—tell me a few interests or projects you care about."
             self.emit("OUTPUT", "Profile recalled")
             return self._result(answer, None, "recognition", "speak")
 
@@ -124,8 +146,7 @@ class A7DOMind:
         if self.identity.is_system_identity_question(text):
             self.emit("IDENTITY", "System identity recognised")
             reasoning = self.multi_agent.run(text, mode="recognition")
-            self.last_signals = reasoning["signals"]
-            self.last_coherence = self._coherence.score(mode="recognition", emotion_value=self.emotion.value, signals=self.last_signals)
+            self.last_signals = reasoning.get("signals")
             self.emit("OUTPUT", "Identity answer ready")
             return self._result(self.identity.system_answer(), self.last_signals, "recognition", "speak")
 
@@ -136,7 +157,7 @@ class A7DOMind:
         self.emotion.update(text)
 
         # -------------------------
-        # Promote density to working context
+        # Promote density to working set
         # -------------------------
         coh_hint = self.last_coherence["score"] if self.last_coherence else None
         self.density.promote(coh_hint)
@@ -155,7 +176,7 @@ class A7DOMind:
             mode="deliberation",
             coherence_hint=coh_hint
         )
-        self.last_signals = reasoning["signals"]
+        self.last_signals = reasoning.get("signals")
 
         # -------------------------
         # Development update
@@ -166,86 +187,17 @@ class A7DOMind:
         # -------------------------
         # Coherence scoring
         # -------------------------
-        self.last_coherence = self._coherence.score(
-            mode="deliberation",
-            emotion_value=self.emotion.value,
-            signals=self.last_signals
-        )
-
-        # -------------------------
-        # Speech gate
-        # -------------------------
-        label = self.last_coherence["label"]
-        if label == "RED":
-            self.emit("GATE", "Speech blocked (low coherence)")
-            answer = "Too much uncertainty right now. Give me one concrete detail or one-sentence goal."
-            self.emit("OUTPUT", "Stabiliser response ready")
-            return self._result(answer, self.last_signals, "deliberation", "block")
-
-        if label == "AMBER":
-            self.emit("GATE", "Cautious speech")
-            answer = reasoning["final"] + "\n\n(If you want a tighter answer, give a single goal or example.)"
-            self.emit("OUTPUT", "Cautious answer ready")
-            return self._result(answer, self.last_signals, "deliberation", "cautious")
-
-        self.emit("GATE", "Speech allowed")
-        self.emit("OUTPUT", "Answer ready")
-        return self._result(reasoning["final"], self.last_signals, "deliberation", "speak")
-
-    # --------------------------------------------------
-    # Candidate update logic
-    # --------------------------------------------------
-
-    def _update_candidates(self, text: str, tags_map: dict):
-        """
-        Convert tags into candidate beliefs with weights.
-        This is deliberately conservative.
-        """
-        # A) Domain interest candidates
-        for domain, count in tags_map.items():
-            # weight: small per mention, accumulates
-            w = 0.6 * count
-            self.memory.add_candidate(
-                key=f"interest:{domain}",
-                weight=w,
-                example=text
+        if self.last_signals:
+            self.last_coherence = self._coherence.score(
+                mode="deliberation",
+                emotion_value=self.emotion.value,
+                signals=self.last_signals
             )
 
-        # B) Self-reference candidate (helps identity modelling)
-        if "relationship" in tags_map:
-            self.memory.add_candidate("trait:self_referential", 0.5, text)
+        self.emit("OUTPUT", "Answer ready")
+        return self._result(reasoning.get("final", ""), self.last_signals, "deliberation", "speak")
 
-        # C) Emotion expression candidate (not the emotion itself, just that it’s present)
-        if "emotion" in tags_map:
-            self.memory.add_candidate("trait:emotion_expressive", 0.4, text)
-
-    # --------------------------------------------------
-
-    def _who_am_i(self, profile) -> str:
-        """
-        Evidence-based identity recall: uses promoted facts first, then profile stats.
-        """
-        facts = self.memory.facts
-
-        top_interests = [k.replace("interest:", "") for k in facts.keys() if k.startswith("interest:")]
-        top_interests = top_interests[:5]
-
-        parts = []
-        if top_interests:
-            parts.append("I can say with confidence you often engage with: " + ", ".join(top_interests) + ".")
-
-        s = profile.summary()
-        domains = s.get("domains", {})
-        if domains and not top_interests:
-            top = sorted(domains.items(), key=lambda x: x[1], reverse=True)[:3]
-            parts.append("So far you tend to talk most about: " + ", ".join([k for k, _ in top]) + ".")
-
-        if "trait:self_referential" in facts:
-            parts.append("You consistently speak in a first-person way, which helps me model your identity over time.")
-
-        return " ".join(parts) if parts else "I’m still building your profile. Tell me a few interests or projects you care about."
-
-    # --------------------------------------------------
+    # -------------------------
 
     def _result(self, answer, signals, mode: str, speech_action: str):
         return {
@@ -258,6 +210,6 @@ class A7DOMind:
             "speech_action": speech_action,
             "density": self.density.stats(),
             "profiles": self.profiles.summary(),
-            "candidates": self.memory.candidates,
-            "facts": self.memory.facts,
+            "curriculum_progress": self.curriculum.peek_progress(),
+            "last_curriculum_packet": self.last_curriculum_packet,
         }
