@@ -1,10 +1,6 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 
-# --------------------------------------------------
-# Imports (constructors only, no side effects)
-# --------------------------------------------------
-
 from a7do.identity import Identity
 from a7do.emotional_state import EmotionalState
 from a7do.memory import Memory
@@ -26,7 +22,7 @@ st.title("🧠 A7DO — Cognitive Interface")
 st.caption("A coherence-regulated, multi-domain cognitive engine")
 
 # --------------------------------------------------
-# Session-safe initialization (runs ONCE)
+# Session-safe initialization
 # --------------------------------------------------
 
 if "mind" not in st.session_state:
@@ -46,18 +42,15 @@ if "mind" not in st.session_state:
         childhood=childhood
     )
 
-    # Expose everything for inspection pages
-    st.session_state["identity"] = identity
-    st.session_state["emotion"] = emotion
-    st.session_state["memory"] = memory
-    st.session_state["development"] = development
-    st.session_state["multi_agent"] = multi_agent
-    st.session_state["childhood"] = childhood
-    st.session_state["mind"] = mind
-
-# --------------------------------------------------
-# Recover shared state
-# --------------------------------------------------
+    st.session_state.update({
+        "identity": identity,
+        "emotion": emotion,
+        "memory": memory,
+        "development": development,
+        "multi_agent": multi_agent,
+        "childhood": childhood,
+        "mind": mind,
+    })
 
 identity    = st.session_state["identity"]
 emotion     = st.session_state["emotion"]
@@ -67,14 +60,27 @@ childhood   = st.session_state["childhood"]
 mind        = st.session_state["mind"]
 
 # --------------------------------------------------
-# Sidebar — System State & Learning
+# Sidebar — System State
 # --------------------------------------------------
 
 with st.sidebar:
-    st.header("🧬 Character Panel")
-    st.markdown(identity.panel())
-    st.markdown(emotion.panel())
-    st.markdown(development.panel())
+    st.header("🧬 System State")
+
+    st.subheader("Identity")
+    st.json({
+        "user_name": identity.user_name,
+        "system_name": identity.system_name,
+        "creator": identity.creator
+    })
+
+    st.subheader("Emotion")
+    st.json(emotion.export())
+
+    st.subheader("Development")
+    st.json({
+        "stage": development.STAGES[development.index],
+        "index": development.index
+    })
 
     st.divider()
 
@@ -88,7 +94,7 @@ with st.sidebar:
 
     st.divider()
 
-    st.header("🗂 Memory (Summary)")
+    st.header("🗂 Memory Summary")
     st.json(memory.summary())
 
 # --------------------------------------------------
@@ -98,9 +104,6 @@ with st.sidebar:
 user_text = st.text_input("Speak to A7DO")
 
 if user_text:
-    # -------------------------
-    # Run cognition
-    # -------------------------
     result = mind.process(user_text)
 
     # -------------------------
@@ -131,9 +134,9 @@ if user_text:
     st.write(f"Action: **{result.get('speech_action', '—')}**")
 
     # -------------------------
-    # Background Density (live)
+    # Background Density
     # -------------------------
-    st.subheader("🌫 Background Density State")
+    st.subheader("🌫 Background Density")
     st.json(result.get("density", {}))
 
     # -------------------------
@@ -157,7 +160,7 @@ if user_text:
         coherence_trace = [s / (zv + 1e-3) for s, zv in zip(sigma, z)]
         ax[1].plot(coherence_trace)
         ax[1].axhline(0.6, linestyle="--", color="yellow")
-        ax[1].set_title("Coherence Gate (Safe to Speak)")
+        ax[1].set_title("Coherence Gate")
 
         st.pyplot(fig)
 
@@ -168,18 +171,8 @@ if user_text:
     st.markdown(f"> {result['answer']}")
 
     # -------------------------
-    # Childhood Learning (early stages)
+    # Childhood Learning
     # -------------------------
     if development.STAGES[development.index] in ["Birth", "Learning"]:
         st.subheader("🧒 Childhood Learning")
-
-        summary = childhood.summary()
-
-        if summary["active"]:
-            st.info(
-                f"Learning burst active — "
-                f"{summary['seconds_remaining']}s remaining"
-            )
-
-        if summary["imprints"]:
-            st.json(summary["imprints"])
+        st.json(childhood.summary())
