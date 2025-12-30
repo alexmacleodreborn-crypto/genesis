@@ -5,8 +5,7 @@ from a7do.coherence import CoherenceScorer
 class A7DOMind:
     """
     Central cognitive orchestrator.
-    Owns cognition state and exposes it for inspection.
-    Implements coherence-gated speech.
+    Coherence feeds back into thinking.
     """
 
     def __init__(self, identity, emotion, memory, development, multi_agent, childhood):
@@ -36,7 +35,7 @@ class A7DOMind:
         self.emit("INPUT", "User input received")
 
         # -------------------------
-        # Childhood learning (0–5)
+        # Childhood learning
         # -------------------------
         if self.development.STAGES[self.development.index] in ["Birth", "Learning"]:
             if not self.childhood.active:
@@ -49,14 +48,13 @@ class A7DOMind:
                 self.emit("CHILDHOOD", "Learning burst ended")
 
         # -------------------------
-        # User introduction
+        # Identity shortcuts
         # -------------------------
         if self.identity.is_user_introduction(text):
             self.emit("IDENTITY", "User identity detected")
             self.identity.capture_user(text)
             self.memory.add("identity", f"User is {self.identity.user_name}")
 
-            self.last_signals = None
             self.last_coherence = self._coherence.score(
                 mode="recognition",
                 emotion_value=self.emotion.value,
@@ -70,9 +68,6 @@ class A7DOMind:
                 "recognition"
             )
 
-        # -------------------------
-        # System identity (recognition mode)
-        # -------------------------
         if self.identity.is_system_identity_question(text):
             self.emit("IDENTITY", "System identity recognised")
             self.emit("THINKING", "Recognition processing")
@@ -100,10 +95,20 @@ class A7DOMind:
         self.emotion.update(text)
 
         # -------------------------
-        # Deliberation
+        # Deliberation (coherence-fed)
         # -------------------------
-        self.emit("THINKING", "Deliberative reasoning")
-        reasoning = self.multi_agent.run(text, mode="deliberation")
+        coherence_hint = (
+            self.last_coherence["score"]
+            if self.last_coherence else None
+        )
+
+        self.emit("THINKING", "Deliberative reasoning (coherence-fed)")
+        reasoning = self.multi_agent.run(
+            text,
+            mode="deliberation",
+            coherence_hint=coherence_hint
+        )
+
         self.last_signals = reasoning["signals"]
 
         # -------------------------
@@ -116,7 +121,7 @@ class A7DOMind:
         self.development.update(self.memory)
 
         # -------------------------
-        # Coherence scoring
+        # Coherence scoring (post)
         # -------------------------
         self.last_coherence = self._coherence.score(
             mode="deliberation",
@@ -125,32 +130,30 @@ class A7DOMind:
         )
 
         # -------------------------
-        # Speech gating
+        # Speech gate (unchanged)
         # -------------------------
-        label = (self.last_coherence or {}).get("label", "AMBER")
+        label = self.last_coherence["label"]
 
         if label == "RED":
-            self.emit("GATE", "Speech blocked (low coherence)")
+            self.emit("GATE", "Speech blocked")
             answer = (
                 "I’m not coherent enough to answer safely yet. "
-                "Can you clarify what you mean (1 sentence), or give one concrete example?"
+                "Could you clarify or give one concrete example?"
             )
             self.emit("OUTPUT", "Stabiliser response ready")
-            return self._result(answer, self.last_signals, "deliberation", speech_action="block")
+            return self._result(answer, self.last_signals, "deliberation", "block")
 
         if label == "AMBER":
-            self.emit("GATE", "Cautious speech (medium coherence)")
-            # Keep the answer, but encourage precision
-            answer = reasoning["final"] + "\n\n(If you want a tighter answer, tell me your exact goal in one line.)"
+            self.emit("GATE", "Cautious speech")
+            answer = reasoning["final"] + "\n\n(If you want a tighter answer, state your goal in one line.)"
             self.emit("OUTPUT", "Cautious answer ready")
-            return self._result(answer, self.last_signals, "deliberation", speech_action="cautious")
+            return self._result(answer, self.last_signals, "deliberation", "cautious")
 
-        # GREEN
-        self.emit("GATE", "Speech allowed (high coherence)")
+        self.emit("GATE", "Speech allowed")
         self.emit("OUTPUT", "Answer ready")
-        return self._result(reasoning["final"], self.last_signals, "deliberation", speech_action="speak")
+        return self._result(reasoning["final"], self.last_signals, "deliberation", "speak")
 
-    def _result(self, answer, signals, mode: str, speech_action: str = "speak"):
+    def _result(self, answer, signals, mode, speech_action="speak"):
         return {
             "answer": answer,
             "events": list(self.events),
