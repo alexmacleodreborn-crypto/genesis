@@ -71,6 +71,13 @@ mind        = st.session_state["mind"]
 # --------------------------------------------------
 
 with st.sidebar:
+    st.header("🌫 Background Density")
+    st.json(result.get("density", {}) if "result" in locals() else {})
+
+    st.header("👤 Profiles")
+    st.json(mind.profiles.summary())
+
+with st.sidebar:
     st.header("🧬 Character Panel")
     st.markdown(identity.panel())
     st.markdown(emotion.panel())
