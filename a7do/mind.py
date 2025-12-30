@@ -1,21 +1,19 @@
 """
-A7DO Mind Module
+A7DO Mind Module — Full Orchestrator
 
-This module orchestrates:
+This module coordinates:
 - Identity system
 - Emotional baseline system
-- Memory system (injected later)
+- Memory system
 - Multi-agent reasoning (Explorer / Critic / Integrator)
-- Consolidation hooks
-- Developmental stage logic
-- Question processing pipeline
+- Development stage logic
+- Character panel generation
 
-The Mind is the central coordinator: it receives input, routes it through
-identity/emotion/memory subsystems, and produces a coherent response.
+The Mind is the central cortex of A7DO.
 """
 
 from __future__ import annotations
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 
 # Subsystems
 from .identity import (
@@ -25,14 +23,12 @@ from .identity import (
     build_identity_paragraph,
 )
 
-from .emotional_state import EmotionalState, EmotionalSnapshot
-
-# Memory will be injected later once memory.py is created
-# from .memory import MemorySystem
-
-# Multi-agent and consolidation modules will be added later
-# from .multi_agent import run_multi_agent_cycle
-# from .consolidation import maybe_consolidate
+from .emotional_state import EmotionalState
+from .multi_agent import run_multi_agent_cycle
+from .development import (
+    update_development_stage,
+    build_development_paragraph,
+)
 
 
 class A7DOMind:
@@ -40,11 +36,12 @@ class A7DOMind:
     The central orchestrator for A7DO.
 
     Responsibilities:
-    - Hold subsystem instances (identity, emotional_state, memory, etc.)
+    - Hold subsystem instances (identity, emotion, memory)
     - Process user questions
     - Trigger emotional updates
     - Trigger identity logic
     - Trigger multi-agent reasoning
+    - Update development stage
     - Produce character-panel summaries
     """
 
@@ -57,17 +54,17 @@ class A7DOMind:
         self.identity = IdentityState()
         self.emotional_state = EmotionalState()
 
-        # Memory will be attached later
+        # Memory is attached later by Streamlit
         self.memory = None
 
-        # Development stage placeholder
-        self._development_stage = "Birth & early childhood"
+        # Development stage
+        self._development_stage = "Birth & Early Childhood"
 
-        # Track last answer for UI
+        # Track last answer
         self._last_answer = None
 
     # ------------------------------------------------------------------
-    # Memory injection (called by streamlit_app after memory is created)
+    # Memory injection
     # ------------------------------------------------------------------
 
     def attach_memory(self, memory_system):
@@ -77,14 +74,10 @@ class A7DOMind:
         self.memory = memory_system
 
     # ------------------------------------------------------------------
-    # Development stage logic (simple placeholder)
+    # Development stage accessor
     # ------------------------------------------------------------------
 
     def developmental_stage(self) -> str:
-        """
-        Return the current developmental stage.
-        Later this will be dynamic.
-        """
         return self._development_stage
 
     # ------------------------------------------------------------------
@@ -97,10 +90,11 @@ class A7DOMind:
 
         Pipeline:
         1. Detect identity questions
-        2. Otherwise run multi-agent reasoning (later)
+        2. Otherwise run multi-agent reasoning
         3. Update emotional baseline
-        4. Store memory (once memory.py exists)
-        5. Return structured answer
+        4. Store memory
+        5. Update development stage
+        6. Return structured answer
         """
 
         if not question:
@@ -115,14 +109,14 @@ class A7DOMind:
         if is_identity_question(question):
             answer = answer_identity_question(self.identity, question)
 
-            # Emotional update (identity questions are usually neutral/curious)
+            # Emotional update
             self.emotional_state.update_from_valence(
                 valence=0.1,
                 label="curious",
                 source="identity_question",
             )
 
-            # Memory logging (once memory exists)
+            # Memory logging
             if self.memory:
                 self.memory.add_memory(
                     kind="identity",
@@ -133,6 +127,9 @@ class A7DOMind:
                     emotion_label="curious",
                 )
 
+            # Development update
+            update_development_stage(self)
+
             self._last_answer = answer
             return {
                 "answer": answer,
@@ -140,22 +137,18 @@ class A7DOMind:
             }
 
         # --------------------------------------------------------------
-        # 2. Multi-agent reasoning (placeholder for now)
+        # 2. Multi-agent reasoning (Explorer → Critic → Integrator)
         # --------------------------------------------------------------
-        # final_answer = run_multi_agent_cycle(question, self)
-        # For now, simple echo:
-        from a7do.multi_agent import run_multi_agent_cycle
-final_answer = run_multi_agent_cycle(question, self)
+        final_answer = run_multi_agent_cycle(question, self)
 
-
-        # Emotional update (neutral)
+        # Emotional update (neutral baseline)
         self.emotional_state.update_from_valence(
             valence=0.0,
             label="neutral",
-            source="question",
+            source="dialogue",
         )
 
-        # Memory logging (later)
+        # Memory logging
         if self.memory:
             self.memory.add_memory(
                 kind="dialogue",
@@ -165,6 +158,9 @@ final_answer = run_multi_agent_cycle(question, self)
                 emotion_valence=0.0,
                 emotion_label="neutral",
             )
+
+        # Development update
+        update_development_stage(self)
 
         self._last_answer = final_answer
         return {
@@ -184,12 +180,13 @@ final_answer = run_multi_agent_cycle(question, self)
 
         identity_text = build_identity_paragraph(self.identity)
         emotion_text = self.emotional_state.build_emotional_paragraph()
-        stage = self.developmental_stage()
+        stage_name = self.developmental_stage()
+        stage_text = build_development_paragraph(stage_name)
 
         return (
             f"### Identity\n{identity_text}\n\n"
             f"### Emotional State\n{emotion_text}\n\n"
-            f"### Development\nI am currently in the '{stage}' stage of my development."
+            f"### Development\n{stage_text}"
         )
 
     # ------------------------------------------------------------------
