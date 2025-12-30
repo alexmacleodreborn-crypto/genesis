@@ -23,7 +23,7 @@ st.set_page_config(
 )
 
 st.title("🧠 A7DO — Cognitive Interface")
-st.caption("A coherence-gated, development-aware cognitive engine")
+st.caption("A coherence-regulated, multi-domain cognitive engine")
 
 # --------------------------------------------------
 # Session-safe initialization (runs ONCE)
@@ -46,7 +46,7 @@ if "mind" not in st.session_state:
         childhood=childhood
     )
 
-    # Expose all components for inspector pages
+    # Expose everything for inspection pages
     st.session_state["identity"] = identity
     st.session_state["emotion"] = emotion
     st.session_state["memory"] = memory
@@ -67,15 +67,8 @@ childhood   = st.session_state["childhood"]
 mind        = st.session_state["mind"]
 
 # --------------------------------------------------
-# Sidebar — Character Panel
+# Sidebar — System State & Learning
 # --------------------------------------------------
-
-with st.sidebar:
-    st.header("🌫 Background Density")
-    st.json(result.get("density", {}) if "result" in locals() else {})
-
-    st.header("👤 Profiles")
-    st.json(mind.profiles.summary())
 
 with st.sidebar:
     st.header("🧬 Character Panel")
@@ -85,13 +78,19 @@ with st.sidebar:
 
     st.divider()
 
+    st.header("👤 Learned Profiles")
+    st.json(mind.profiles.summary())
+
+    st.divider()
+
+    st.header("🌫 Background Density")
+    st.json(mind.density.stats())
+
+    st.divider()
+
     st.header("🗂 Memory (Summary)")
     st.json(memory.summary())
 
-with st.sidebar:
-    st.header("👤 Language Profile")
-    st.json(mind.profiles.summary())
-    
 # --------------------------------------------------
 # Main Interaction
 # --------------------------------------------------
@@ -99,44 +98,47 @@ with st.sidebar:
 user_text = st.text_input("Speak to A7DO")
 
 if user_text:
+    # -------------------------
     # Run cognition
+    # -------------------------
     result = mind.process(user_text)
 
-    # --------------------------------------------------
+    # -------------------------
     # Cognitive Timeline
-    # --------------------------------------------------
-
+    # -------------------------
     st.subheader("🧠 Cognitive Activity")
     for event in result["events"]:
         st.code(event)
 
-    # --------------------------------------------------
+    # -------------------------
     # Mind Path
-    # --------------------------------------------------
-
+    # -------------------------
     st.subheader("🧭 Mind Path")
     st.write(" → ".join(result.get("path", [])))
 
-    # --------------------------------------------------
+    # -------------------------
     # Coherence
-    # --------------------------------------------------
-
+    # -------------------------
     st.subheader("✅ Coherence")
     coh = result.get("coherence", {})
     st.metric("Coherence Score", coh.get("score", "—"))
     st.write(f"Status: **{coh.get('label', '—')}**")
 
-    # --------------------------------------------------
+    # -------------------------
     # Speech Gate
-    # --------------------------------------------------
-
+    # -------------------------
     st.subheader("🗣 Speech Gate")
     st.write(f"Action: **{result.get('speech_action', '—')}**")
 
-    # --------------------------------------------------
-    # Reasoning Signals (Z–Σ)
-    # --------------------------------------------------
+    # -------------------------
+    # Background Density (live)
+    # -------------------------
+    st.subheader("🌫 Background Density State")
+    st.json(result.get("density", {}))
 
+    # -------------------------
+    # Reasoning Signals (Z–Σ)
+    # -------------------------
     signals = result.get("signals")
 
     if signals and signals.get("z") and signals.get("sigma"):
@@ -147,7 +149,7 @@ if user_text:
 
         fig, ax = plt.subplots(2, 1, figsize=(9, 5))
 
-        ax[0].plot(z, label="Z (Inhibition)")
+        ax[0].plot(z, label="Z (Constraint)")
         ax[0].plot(sigma, label="Σ (Exploration)")
         ax[0].legend()
         ax[0].set_title("Constraint vs Exploration")
@@ -159,17 +161,15 @@ if user_text:
 
         st.pyplot(fig)
 
-    # --------------------------------------------------
+    # -------------------------
     # Final Output
-    # --------------------------------------------------
-
+    # -------------------------
     st.subheader("💬 A7DO Response")
     st.markdown(f"> {result['answer']}")
 
-    # --------------------------------------------------
-    # Childhood Learning (visible only in early stages)
-    # --------------------------------------------------
-
+    # -------------------------
+    # Childhood Learning (early stages)
+    # -------------------------
     if development.STAGES[development.index] in ["Birth", "Learning"]:
         st.subheader("🧒 Childhood Learning")
 
