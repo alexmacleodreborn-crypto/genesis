@@ -1,93 +1,80 @@
 import streamlit as st
-import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-
 st.title("🧠 Mind Inspector")
 
-# --------------------------------------------------
-# Recover shared state
-# --------------------------------------------------
-
 mind = st.session_state.get("mind")
-childhood = st.session_state.get("childhood")
 
 if not mind:
-    st.error("Mind not initialised yet.")
+    st.error("Mind not initialised.")
     st.stop()
 
 # --------------------------------------------------
-# Cognitive Timeline
+# Cognitive log (process flow)
 # --------------------------------------------------
 
-st.header("📜 Cognitive Timeline")
-for e in mind.events:
-    st.code(e)
+st.subheader("🧠 Cognitive Activity Log")
 
-# --------------------------------------------------
-# Reasoning Signals (Z–Σ)
-# --------------------------------------------------
-
-st.header("🧭 Last Mind Path")
-st.write(" → ".join(getattr(mind, "path", [])) or "No path recorded yet.")
-
-st.header("✅ Last Coherence")
-st.json(getattr(mind, "last_coherence", None) or {"info": "No coherence yet."})
-
-st.header("📈 Reasoning Signals (Z–Σ)")
-signals = getattr(mind, "last_signals", None)
-if not signals:
-    st.info("No reasoning signals recorded yet.")
+if hasattr(mind, "log") and mind.log:
+    for entry in mind.log:
+        st.code(entry)
 else:
-    st.json({"mode": signals.get("mode", "unknown")})
-    # keep your plotting code here using signals["z"] and signals["sigma"]
-    
-signals = getattr(mind, "last_signals", None)
-
-st.header("📈 Reasoning Signals (Z–Σ)")
-
-if signals:
-    z = signals["z"]
-    sigma = signals["sigma"]
-    mode = signals.get("mode", "unknown")
-
-    fig, ax = plt.subplots(2, 1, figsize=(9, 5))
-
-    ax[0].plot(z, label="Z (Inhibition)")
-    ax[0].plot(sigma, label="Σ (Exploration)")
-    ax[0].legend()
-    ax[0].set_title(f"Constraint vs Exploration ({mode})")
-
-    coherence = [s / (zv + 1e-3) for s, zv in zip(sigma, z)]
-    ax[1].plot(coherence)
-    ax[1].axhline(0.6, linestyle="--", color="yellow")
-    ax[1].set_title("Coherence Gate (Safe to Speak)")
-
-    st.pyplot(fig)
-else:
-    st.info("No reasoning signals recorded yet.")
+    st.caption("No cognitive log entries yet.")
 
 # --------------------------------------------------
-# Childhood Learning Inspector
+# Event Frames (Flow Memory)
 # --------------------------------------------------
 
-st.header("🧒 Childhood Learning")
+st.subheader("🧩 Event Frames (Lived Experience)")
 
-if childhood:
-    summary = childhood.summary()
+event_memory = mind.events
 
-    st.metric(
-        "Active Learning Burst",
-        "Yes" if summary["active"] else "No"
-    )
-
-    if summary["active"]:
-        st.metric("Seconds Remaining", summary["seconds_remaining"])
-
-    if summary["imprints"]:
-        st.subheader("Recent Imprints")
-        st.json(summary["imprints"])
-    else:
-        st.info("No childhood imprints yet.")
+if not event_memory.frames:
+    st.caption("No events recorded yet.")
 else:
-    st.info("Childhood module not initialised.")
+    for evt in event_memory.frames[-10:]:
+        with st.expander(f"Event {evt.event_id}  ·  {round(evt.t1 - evt.t0, 2)}s"):
+            st.json(evt.snapshot())
+
+# --------------------------------------------------
+# Event Silos (Life-streams)
+# --------------------------------------------------
+
+st.subheader("🧬 Entity Life-Streams (Silos)")
+
+if not event_memory.silos:
+    st.caption("No silos yet.")
+else:
+    for entity_id, event_ids in event_memory.silos.items():
+        with st.expander(f"Entity {entity_id}"):
+            st.write("Event IDs:")
+            st.write(event_ids)
+
+# --------------------------------------------------
+# Reoccurrence
+# --------------------------------------------------
+
+st.subheader("🔁 Reoccurrence Signals")
+
+st.json(mind.reoccurrence.summary())
+
+# --------------------------------------------------
+# Entity Graph
+# --------------------------------------------------
+
+st.subheader("🧩 Entity Graph")
+st.json(mind.entities.summary())
+
+# --------------------------------------------------
+# Fact Ledger
+# --------------------------------------------------
+
+st.subheader("✅ Entity Facts")
+st.json(mind.facts.summary())
+
+# --------------------------------------------------
+# Unbound labels (names waiting for context)
+# --------------------------------------------------
+
+st.subheader("🏷 Unbound Labels")
+st.json(mind.unbound_names)
