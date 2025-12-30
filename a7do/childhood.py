@@ -46,6 +46,14 @@ class Childhood:
     def is_active(self) -> bool:
         return self._active_until is not None and time.time() < self._active_until
 
+    def seconds_remaining(self) -> float:
+        """
+        Seconds remaining in the current burst (0 if inactive).
+        """
+        if not self.is_active():
+            return 0.0
+        return max(0.0, self._active_until - time.time())
+
     # --------------------------------------------------
 
     def absorb(self, text: str):
@@ -61,11 +69,12 @@ class Childhood:
 
     def summary(self):
         """
-        Stable inspection schema.
+        Stable inspection schema for UI and debugging.
         """
         return {
             "active": self.is_active(),
+            "seconds_remaining": round(self.seconds_remaining(), 2),  # <-- FIX
             "imprint_count": len(self.imprints),
-            "imprints": self.imprints,          # <-- FIX
+            "imprints": self.imprints,
             "recent": self.imprints[-5:]
         }
