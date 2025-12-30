@@ -1,5 +1,4 @@
 import streamlit as st
-
 from a7do.identity import Identity
 from a7do.emotional_state import EmotionalState
 from a7do.memory import Memory
@@ -8,107 +7,39 @@ from a7do.multi_agent import MultiAgent
 from a7do.childhood import Childhood
 from a7do.mind import A7DOMind
 
-st.set_page_config(page_title="A7DO Cognitive Interface", layout="wide")
-
-st.title("🧠 A7DO — Cognitive Interface")
-st.caption("Developmental cognition with entity grounding and childhood learning")
-
-# --------------------------------------------------
-# Session init
-# --------------------------------------------------
+st.set_page_config(layout="wide")
+st.title("🧠 A7DO — Entity & Identity System")
 
 if "mind" not in st.session_state:
-    identity = Identity()
-    emotion = EmotionalState()
-    memory = Memory()
-    development = Development()
-    multi_agent = MultiAgent()
-    childhood = Childhood()
-
     mind = A7DOMind(
-        identity=identity,
-        emotion=emotion,
-        memory=memory,
-        development=development,
-        multi_agent=multi_agent,
-        childhood=childhood
+        identity=Identity(),
+        emotion=EmotionalState(),
+        memory=Memory(),
+        development=Development(),
+        multi_agent=MultiAgent(),
+        childhood=Childhood()
     )
+    st.session_state.mind = mind
+    st.session_state.last = None
 
-    st.session_state.update({
-        "mind": mind,
-        "identity": identity,
-        "emotion": emotion,
-        "memory": memory,
-        "development": development,
-        "childhood": childhood,
-        "last_result": None,
-    })
+mind = st.session_state.mind
 
-mind = st.session_state["mind"]
-identity = st.session_state["identity"]
-development = st.session_state["development"]
+text = st.text_input("Speak")
 
-# --------------------------------------------------
-# Sidebar
-# --------------------------------------------------
+if text:
+    st.session_state.last = mind.process(text)
 
-with st.sidebar:
-    st.header("🧬 System State")
+if st.session_state.last:
+    r = st.session_state.last
 
-    st.subheader("Identity")
-    st.json({
-        "user": identity.user_name,
-        "creator": identity.creator,
-        "system": identity.system_name
-    })
+    st.subheader("Answer")
+    st.write(r["answer"])
 
-    st.subheader("Development")
-    st.json({
-        "stage": development.STAGES[development.index],
-        "index": development.index
-    })
+    st.subheader("Entity Graph")
+    st.json(r["entities"])
 
-    st.subheader("📚 Foundational Language")
-    st.json(mind.curriculum.peek_progress())
+    st.subheader("Entity Facts")
+    st.json(r["facts"])
 
-    if mind.last_curriculum_packet:
-        st.write("Latest drip")
-        st.json(mind.last_curriculum_packet)
-
-    st.subheader("🧒 Childhood Learning")
-    st.json(mind.childhood.summary())
-
-    st.subheader("🧩 Entity Graph")
-    st.json(mind.entities.summary())
-
-    st.subheader("🌫 Background Density")
-    st.json(mind.density.stats())
-
-    st.subheader("🗂 Memory")
-    st.json(st.session_state["memory"].summary())
-
-# --------------------------------------------------
-# Interaction
-# --------------------------------------------------
-
-user_text = st.text_input("Speak to A7DO")
-
-if user_text:
-    st.session_state["last_result"] = mind.process(user_text)
-
-result = st.session_state.get("last_result")
-
-if result:
-    st.subheader("🧠 Cognitive Activity")
-    for e in result["events"]:
-        st.code(e)
-
-    st.subheader("🧭 Mind Path")
-    st.write(" → ".join(result["path"]))
-
-    if result.get("coherence"):
-        st.subheader("✅ Coherence")
-        st.metric("Score", round(result["coherence"]["score"], 3))
-
-    st.subheader("💬 Response")
-    st.markdown(f"> {result['answer']}")
+    st.subheader("Mind Path")
+    st.write(" → ".join(r["path"]))
