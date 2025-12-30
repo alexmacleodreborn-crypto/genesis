@@ -23,7 +23,7 @@ st.set_page_config(
 )
 
 st.title("🧠 A7DO — Cognitive Interface")
-st.caption("A modular, coherence-driven cognitive engine")
+st.caption("A coherence-gated, development-aware cognitive engine")
 
 # --------------------------------------------------
 # Session-safe initialization (runs ONCE)
@@ -116,6 +116,13 @@ if user_text:
     st.write(f"Status: **{coh.get('label', '—')}**")
 
     # --------------------------------------------------
+    # Speech Gate
+    # --------------------------------------------------
+
+    st.subheader("🗣 Speech Gate")
+    st.write(f"Action: **{result.get('speech_action', '—')}**")
+
+    # --------------------------------------------------
     # Reasoning Signals (Z–Σ)
     # --------------------------------------------------
 
@@ -140,15 +147,12 @@ if user_text:
         ax[1].set_title("Coherence Gate (Safe to Speak)")
 
         st.pyplot(fig)
-        
-    st.subheader("🗣 Speech Gate")
-    st.write(f"Action: **{result.get('speech_action','—')}**")
-    
+
     # --------------------------------------------------
     # Final Output
     # --------------------------------------------------
 
-st.subheader("💬 A7DO Response")
+    st.subheader("💬 A7DO Response")
     st.markdown(f"> {result['answer']}")
 
     # --------------------------------------------------
