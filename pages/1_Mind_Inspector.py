@@ -1,6 +1,7 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 
+from a7do.childhood import Childhood
 from a7do.identity import Identity
 from a7do.emotional_state import EmotionalState
 from a7do.memory import Memory
@@ -30,6 +31,7 @@ memory = st.session_state["memory"]
 development = st.session_state["development"]
 multi_agent = st.session_state["multi_agent"]
 mind = st.session_state["mind"]
+childhood = st.session_state.get("childhood")
 
 # ------------------------------------------------------------------
 # IDENTITY
