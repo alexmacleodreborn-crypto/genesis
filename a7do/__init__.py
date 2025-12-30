@@ -1,2 +1,1 @@
-# a7do package
-self.childhood = childhood()
+# A7DO package initializer
