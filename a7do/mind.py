@@ -1,11 +1,12 @@
 import time
+
 from a7do.coherence import CoherenceScorer
 from a7do.profile import ProfileManager
 from a7do.tagger import Tagger
 from a7do.background_density import BackgroundDensity
 from a7do.language_curriculum import LanguageCurriculum
 from a7do.entities import EntityGraph
-from a7do.entity_facts import EntityFactLedger
+from .entity_facts import EntityFactLedger
 
 
 class A7DOMind:
@@ -24,9 +25,14 @@ class A7DOMind:
         self.facts = EntityFactLedger()
         self.curriculum = LanguageCurriculum(drip_seconds=10)
 
+        # name candidates waiting to be bound to entities
+        self.unbound_names = {}
+
         self.events = []
         self.path = []
         self.last_coherence = None
+
+    # --------------------------------------------------
 
     def emit(self, phase, msg):
         self.events.append(f"[{phase}] {msg}")
@@ -47,35 +53,79 @@ class A7DOMind:
             user = self.entities.create("person")
             user.add_name(self.identity.user_name)
 
-        # Childhood vs adult source
+        # Determine learning source
         source = "childhood" if self.childhood.is_simple_input(text) else "adult"
 
-        # Dog detection (example entity)
         t = text.lower()
+
+        # --------------------------------------------------
+        # Entity detection (STRUCTURE ONLY)
+        # --------------------------------------------------
+
+        current_entities = []
+
         if "dog" in t:
             dog = self.entities.create("animal")
             dog.add_attribute("species:dog", 1.0)
             dog.link("owner", user.id)
             user.link("owns", dog.id)
 
+            current_entities.append(dog)
+
             self.facts.add_candidate(dog.id, "identity:dog", source)
             self.facts.try_promote_identity(dog.id, "identity:dog")
 
-        # Name detection
+            self.emit("ENTITY", "Dog entity detected")
+
+        # --------------------------------------------------
+        # Name & alias handling (SAFE)
+        # --------------------------------------------------
+
         for word in text.split():
-            if word.istitle():
-                e = self.entities.find_by_name_or_alias(word)
-                if e:
-                    self.facts.add_candidate(e.id, f"alias:{word}", "adult")
-                    self.facts.try_promote_alias(e.id, word)
-                else:
-                    dog.add_name(word)
-                    self.facts.add_candidate(dog.id, f"name:{word}", "adult")
-                    self.facts.try_promote_identity(dog.id, f"name:{word}")
+            if not word.istitle():
+                continue
+
+            # Try to bind to an existing entity
+            e = self.entities.find_by_name_or_alias(word)
+
+            if e:
+                # Existing entity → possible alias
+                self.facts.add_candidate(e.id, f"alias:{word}", "adult")
+                self.facts.try_promote_alias(e.id, word)
+                self.emit("ALIAS", f"Alias candidate: {word}")
+                continue
+
+            # Otherwise: store as unbound name candidate
+            self.unbound_names[word] = {
+                "count": self.unbound_names.get(word, {}).get("count", 0) + 1,
+                "last_seen": time.time(),
+                "source": source
+            }
+            self.emit("NAME", f"Unbound name candidate: {word}")
+
+        # --------------------------------------------------
+        # Attempt to bind unbound names to recent entities
+        # --------------------------------------------------
+
+        if current_entities and self.unbound_names:
+            for name, info in list(self.unbound_names.items()):
+                for e in current_entities:
+                    e.add_name(name)
+                    self.facts.add_candidate(e.id, f"name:{name}", info["source"])
+                    self.facts.try_promote_identity(e.id, f"name:{name}")
+                    self.emit("BIND", f"Bound name {name} to entity {e.id}")
+                del self.unbound_names[name]
+
+        # --------------------------------------------------
+        # Memory
+        # --------------------------------------------------
 
         self.memory.add(kind="utterance", content=text, tags=tags)
 
+        # --------------------------------------------------
         # Identity queries
+        # --------------------------------------------------
+
         if self.identity.is_user_identity_question(text):
             return self._who_am_i(user)
 
@@ -84,7 +134,7 @@ class A7DOMind:
             "events": self.events,
             "path": self.path,
             "entities": self.entities.summary(),
-            "facts": self.facts.summary()
+            "facts": self.facts.summary(),
         }
 
     # --------------------------------------------------
@@ -95,5 +145,5 @@ class A7DOMind:
             "events": self.events,
             "path": self.path,
             "entities": self.entities.summary(),
-            "facts": self.facts.summary()
+            "facts": self.facts.summary(),
         }
