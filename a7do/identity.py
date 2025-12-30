@@ -1,39 +1,34 @@
 class Identity:
     def __init__(self):
-        self.name = "A7DO"
+        self.system_name = "A7DO"
         self.creator = "Alex Macleod"
-        self.kind = "Artificial Cognitive System"
-
-        # NEW
         self.user_name = None
 
-    def is_identity_question(self, text: str) -> bool:
-        triggers = ["who are you", "your name", "what are you"]
-        return any(t in text.lower() for t in triggers)
+    def is_system_identity_question(self, text: str) -> bool:
+        t = text.lower()
+        return any(x in t for x in ["who are you", "your name", "what are you"])
 
     def is_user_introduction(self, text: str) -> bool:
-        lowered = text.lower()
-        return lowered.startswith("i am ") or "my name is" in lowered
+        t = text.lower()
+        return t.startswith("i am ") or "my name is" in t
 
-    def capture_user_identity(self, text: str):
-        lowered = text.lower()
-        if lowered.startswith("i am "):
+    def capture_user(self, text: str):
+        t = text.lower()
+        if t.startswith("i am "):
             self.user_name = text[5:].strip()
-        elif "my name is" in lowered:
+        elif "my name is" in t:
             self.user_name = text.split("my name is")[-1].strip()
 
-    def answer(self, _: str) -> str:
+    def system_answer(self) -> str:
         return (
-            f"I am {self.name}, a modular cognitive system created by "
-            f"{self.creator}."
+            f"I am {self.system_name}, a modular cognitive system "
+            f"created by {self.creator}."
         )
 
-    def character_panel(self) -> str:
-        user = self.user_name if self.user_name else "Unknown"
+    def panel(self) -> str:
         return f"""
 **Identity**
-- Name: {self.name}
-- Type: {self.kind}
+- System: {self.system_name}
 - Creator: {self.creator}
-- User: {user}
+- User: {self.user_name or "Unknown"}
 """
