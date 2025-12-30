@@ -110,7 +110,7 @@ if user_text:
     # Cognitive Timeline
     # -------------------------
     st.subheader("🧠 Cognitive Activity")
-    for event in result["events"]:
+    for event in result.get("events", []):
         st.code(event)
 
     # -------------------------
@@ -120,12 +120,17 @@ if user_text:
     st.write(" → ".join(result.get("path", [])))
 
     # -------------------------
-    # Coherence
+    # Coherence (SAFE)
     # -------------------------
     st.subheader("✅ Coherence")
-    coh = result.get("coherence", {})
-    st.metric("Coherence Score", coh.get("score", "—"))
-    st.write(f"Status: **{coh.get('label', '—')}**")
+
+    coh = result.get("coherence")
+
+    if coh:
+        st.metric("Coherence Score", round(coh.get("score", 0.0), 3))
+        st.write(f"Status: **{coh.get('label', '—')}**")
+    else:
+        st.write("Coherence not evaluated for this path.")
 
     # -------------------------
     # Speech Gate
