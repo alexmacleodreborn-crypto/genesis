@@ -104,7 +104,15 @@ class A7DOMind:
         tags_map = self.tagger.tag(text)
         tags = list(tags_map.keys())
         self.emit("TAGGING", f"Domains: {tags if tags else ['none']}")
+# -------------------------
+# Childhood learning trigger
+# -------------------------
+        if self.childhood.is_simple_input(text):
+        if not self.childhood.is_active():
+        self.childhood.start_burst()
+        self.emit("CHILDHOOD", "Childhood learning burst started")
 
+    self.childhood.absorb(text)
         self._update_entities(text, tags)
         self.emit("ENTITIES", "Entity graph updated")
 
