@@ -107,8 +107,8 @@ st.write(f"Status: **{coh.get('label','—')}**")
 
 st.subheader("🧠 Cognitive Activity")
 
-    for event in result["events"]:
-        st.code(event)
+for event in result["events"]:
+st.code(event)
 
     # ----------------------------------------------
     # Reasoning Signals (Z–Σ)
