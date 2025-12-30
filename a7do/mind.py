@@ -25,7 +25,6 @@ class A7DOMind:
         self.facts = EntityFactLedger()
         self.curriculum = LanguageCurriculum(drip_seconds=10)
 
-        # name candidates waiting to be bound to entities
         self.unbound_names = {}
 
         self.events = []
@@ -47,64 +46,55 @@ class A7DOMind:
 
         tags = list(self.tagger.tag(text).keys())
 
-        # Ensure user entity exists
+        # Ensure user entity
         user = self.entities.find_by_name_or_alias(self.identity.user_name)
         if not user:
             user = self.entities.create("person")
             user.add_name(self.identity.user_name)
 
-        # Determine learning source
         source = "childhood" if self.childhood.is_simple_input(text) else "adult"
-
         t = text.lower()
 
-        # --------------------------------------------------
-        # Entity detection (STRUCTURE ONLY)
-        # --------------------------------------------------
-
         current_entities = []
+
+        # --------------------------------------------------
+        # ENTITY DETECTION (STRUCTURAL)
+        # --------------------------------------------------
 
         if "dog" in t:
             dog = self.entities.create("animal")
             dog.add_attribute("species:dog", 1.0)
             dog.link("owner", user.id)
             user.link("owns", dog.id)
-
             current_entities.append(dog)
 
             self.facts.add_candidate(dog.id, "identity:dog", source)
             self.facts.try_promote_identity(dog.id, "identity:dog")
-
             self.emit("ENTITY", "Dog entity detected")
 
         # --------------------------------------------------
-        # Name & alias handling (SAFE)
+        # NAME / ALIAS HANDLING
         # --------------------------------------------------
 
         for word in text.split():
             if not word.istitle():
                 continue
 
-            # Try to bind to an existing entity
             e = self.entities.find_by_name_or_alias(word)
-
             if e:
-                # Existing entity → possible alias
                 self.facts.add_candidate(e.id, f"alias:{word}", "adult")
                 self.facts.try_promote_alias(e.id, word)
                 self.emit("ALIAS", f"Alias candidate: {word}")
-                continue
-
-            # Otherwise: store as unbound name candidate
-            self.unbound_names[word] = {
-                "count": self.unbound_names.get(word, {}).get("count", 0) + 1,
-                "last_seen": time.time(),
-                "source": source
-            }
-            self.emit("NAME", f"Unbound name candidate: {word}")
+            else:
+                self.unbound_names[word] = {
+                    "count": self.unbound_names.get(word, {}).get("count", 0) + 1,
+                    "last_seen": time.time(),
+                    "source": source
+                }
+                self.emit("NAME", f"Unbound name: {word}")
 
         # --------------------------------------------------
-        # Attempt to bind unbound names to recent entities
+        # BIND UNBOUND NAMES
         # --------------------------------------------------
 
         if current_entities and self.unbound_names:
@@ -113,24 +103,33 @@ class A7DOMind:
                     e.add_name(name)
                     self.facts.add_candidate(e.id, f"name:{name}", info["source"])
                     self.facts.try_promote_identity(e.id, f"name:{name}")
-                    self.emit("BIND", f"Bound name {name} to entity {e.id}")
+                    self.emit("BIND", f"Bound name {name}")
                 del self.unbound_names[name]
 
         # --------------------------------------------------
-        # Memory
+        # MEMORY
         # --------------------------------------------------
 
         self.memory.add(kind="utterance", content=text, tags=tags)
 
         # --------------------------------------------------
-        # Identity queries
+        # IDENTITY QUERIES
         # --------------------------------------------------
 
         if self.identity.is_user_identity_question(text):
             return self._who_am_i(user)
 
+        # --------------------------------------------------
+        # RESPONSE LOGIC
+        # --------------------------------------------------
+
+        if self.facts.facts:
+            answer = "I’m forming a clearer understanding. You can ask who someone is."
+        else:
+            answer = "I’m learning from this."
+
         return {
-            "answer": "Noted.",
+            "answer": answer,
             "events": self.events,
             "path": self.path,
             "entities": self.entities.summary(),
