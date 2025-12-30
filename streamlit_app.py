@@ -15,40 +15,40 @@ emotion = EmotionalState()
 memory = Memory()
 development = Development()
 multi_agent = MultiAgent()
-
 mind = A7DOMind(identity, emotion, memory, development, multi_agent)
 
 with st.sidebar:
     st.header("🧠 A7DO")
-    st.markdown(identity.character_panel())
-    st.markdown(emotion.character_panel())
-    st.markdown(development.character_panel())
+    st.markdown(identity.panel())
+    st.markdown(emotion.panel())
+    st.markdown(development.panel())
     st.json(memory.summary())
 
 st.title("A7DO Cognitive Interface")
 
-user_input = st.text_input("Speak to A7DO")
+text = st.text_input("Speak to A7DO")
 
-if user_input:
-    result = mind.process(user_input)
+if text:
+    result = mind.process(text)
 
     st.subheader("🧬 Cognitive Activity")
-    for event in result["events"]:
-        st.markdown(f"**[{event.phase}]** {event.message}")
+    for e in result["events"]:
+        st.write(e)
 
-    if result["reasoning"]:
-        z = result["reasoning"]["z"]
-        sigma = result["reasoning"]["sigma"]
+    if result["signals"]:
+        z = result["signals"]["z"]
+        sigma = result["signals"]["sigma"]
 
         fig, ax = plt.subplots(2, 1, figsize=(8, 5))
-        ax[0].plot(z, label="Inhibition (Z)")
-        ax[0].plot(sigma, label="Chaos (Σ)")
+        ax[0].plot(z, label="Z (Inhibition)")
+        ax[0].plot(sigma, label="Σ (Chaos)")
         ax[0].legend()
 
         coherence = [s / (zv + 1e-3) for s, zv in zip(sigma, z)]
         ax[1].plot(coherence)
         ax[1].axhline(0.6, linestyle="--", color="yellow")
+
         st.pyplot(fig)
 
     st.subheader("💬 Final Answer")
-    st.markdown(f"> {result['answer']}\n\n_Thought process complete._")
+    st.markdown(f"> {result['answer']}")
