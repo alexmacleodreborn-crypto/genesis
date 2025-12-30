@@ -92,6 +92,14 @@ user_text = st.text_input("Speak to A7DO")
 if user_text:
 
     result = mind.process(user_text)
+    
+    st.subheader("🧭 Mind Path")
+st.write(" → ".join(result.get("path", [])))
+
+st.subheader("✅ Coherence")
+coh = result.get("coherence") or {}
+st.metric("Coherence Score", coh.get("score", "—"))
+st.write(f"Status: **{coh.get('label','—')}**")
 
     # ----------------------------------------------
     # Cognitive Timeline
