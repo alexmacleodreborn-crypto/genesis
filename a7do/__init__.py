@@ -1,1 +1,2 @@
-# A7DO package
+from .mind import A7DOMind
+from .profile import PersonProfile, ProfileManager
