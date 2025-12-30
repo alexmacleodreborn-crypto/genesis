@@ -106,6 +106,34 @@ if signals:
 else:
     st.info("No reasoning signals yet.")
 
+# --------------------------------------------------
+# CHILDHOOD LEARNING
+# --------------------------------------------------
+
+st.header("🧒 Childhood Learning (0–5)")
+
+if childhood:
+    summary = childhood.summary()
+
+    st.metric(
+        "Active Learning Burst",
+        "Yes" if summary["active"] else "No"
+    )
+
+    if summary["active"]:
+        st.metric(
+            "Seconds Remaining",
+            summary["seconds_remaining"]
+        )
+
+    if summary["imprints"]:
+        st.subheader("Recent Imprints")
+        st.json(summary["imprints"])
+    else:
+        st.info("No childhood imprints recorded yet.")
+else:
+    st.info("Childhood module not initialised.")
+    
 # ------------------------------------------------------------------
 # COGNITIVE TIMELINE
 # ------------------------------------------------------------------
