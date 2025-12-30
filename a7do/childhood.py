@@ -13,6 +13,8 @@ class Childhood:
     def __init__(self, burst_seconds: int = 10):
         self.burst_seconds = burst_seconds
         self._active_until = None
+
+        # full imprint store
         self.imprints = []
 
     # --------------------------------------------------
@@ -26,7 +28,8 @@ class Childhood:
         simple_words = [
             "see", "is", "my", "this", "that",
             "dog", "cat", "ball", "bike", "room",
-            "mum", "dad", "blue", "red", "big", "small"
+            "mum", "dad",
+            "blue", "red", "big", "small"
         ]
 
         # short, simple sentences only
@@ -57,8 +60,12 @@ class Childhood:
     # --------------------------------------------------
 
     def summary(self):
+        """
+        Stable inspection schema.
+        """
         return {
             "active": self.is_active(),
             "imprint_count": len(self.imprints),
+            "imprints": self.imprints,          # <-- FIX
             "recent": self.imprints[-5:]
         }
