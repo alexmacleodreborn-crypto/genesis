@@ -1,55 +1,41 @@
-from dataclasses import dataclass
-from typing import List
+# a7do/coherence.py
 
-
-@dataclass
-class CoherenceState:
-    sigma: float
-    z: float
-    divergence: float
-    coherence: float
-    domains: List[str]
-
-
-def compute_coherence(domains: List[str], recall_strength: float, emotional_valence: float) -> CoherenceState:
+class CoherenceScorer:
     """
-    Simple placeholder for SLED-style coherence:
-    - more domains → higher entropy (sigma)
-    - stronger recall → higher z (confidence)
-    - emotional valence modulates z slightly
+    Coherence scoring for A7DO.
+    Returns a score in [0,1] plus a label.
     """
-    num_domains = max(1, len(domains))
-    domain_entropy = 0.3 + 0.1 * (num_domains - 1)
 
-    sigma = 0.2 + 0.2 * domain_entropy
-    z = 0.4 + 0.4 * recall_strength
-    z += 0.1 * emotional_valence
-    z = max(0.0, min(1.0, z))
+    def score(self, *, mode: str, emotion_value: float, signals: dict | None) -> dict:
+        # Base score by mode (recognition is naturally more stable)
+        base = 0.85 if mode == "recognition" else 0.65
 
-    divergence = sigma * (1 - z)
-    coherence = max(0.0, 1.0 - divergence)
+        # Emotional penalty (large absolute emotion drifts reduce coherence)
+        # Keep mild effect; this is a toy stability term.
+        emo_penalty = min(abs(emotion_value) / 5.0, 0.25)  # caps at 0.25
 
-    return CoherenceState(
-        sigma=sigma,
-        z=z,
-        divergence=divergence,
-        coherence=coherence,
-        domains=domains,
-    )
+        # Signal-based coherence from Z–Σ if available
+        sig_bonus = 0.0
+        if signals and signals.get("z") and signals.get("sigma"):
+            z = signals["z"]
+            sigma = signals["sigma"]
+            # coherence trace: sigma/(z+eps)
+            eps = 1e-3
+            coh = [s / (zz + eps) for s, zz in zip(sigma, z)]
+            # reward if median coherence stays under threshold (stable)
+            median = sorted(coh)[len(coh) // 2]
+            # Lower median coherence implies more constraint; clamp
+            stability = max(0.0, min(1.0, 1.0 - median))  # invert-ish
+            sig_bonus = 0.20 * stability  # small bonus
 
+        score = base - emo_penalty + sig_bonus
+        score = max(0.0, min(1.0, score))
 
-def describe_coherence(state: CoherenceState) -> str:
-    """
-    Human-readable description in SLED-ish language.
-    """
-    level = "low"
-    if state.coherence > 0.75:
-        level = "high"
-    elif state.coherence > 0.45:
-        level = "medium"
+        if score >= 0.75:
+            label = "GREEN"
+        elif score >= 0.55:
+            label = "AMBER"
+        else:
+            label = "RED"
 
-    return (
-        f"Using my SLED-style intuition, this feels like {level} coherence "
-        f"(coherence={state.coherence:.2f}, sigma={state.sigma:.2f}, z={state.z:.2f}, "
-        f"domains={state.domains})."
-    )
+        return {"score": round(score, 3), "label": label}
