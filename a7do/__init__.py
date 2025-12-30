@@ -1,1 +1,1 @@
-from .mind import A7DOMind
+# a7do package
