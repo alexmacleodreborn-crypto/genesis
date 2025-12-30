@@ -3,9 +3,12 @@ import re
 
 class Identity:
     def __init__(self):
-        self.user_name = None
+        # System identity
         self.system_name = "A7DO"
         self.creator = "Alex Macleod"
+
+        # Default user identity rule: Alex is the creator + default user unless overwritten explicitly
+        self.user_name = "Alex Macleod"
 
     def is_user_introduction(self, text: str) -> bool:
         return bool(re.search(r"\b(my name is|i am|i'm)\b", text.lower()))
@@ -17,9 +20,14 @@ class Identity:
         return bool(re.search(r"\b(who am i|what do you know about me|what am i like)\b", text.lower()))
 
     def capture_user(self, text: str):
-        m = re.search(r"\b(my name is|i am|i'm)\s+([a-zA-Z]+)", text.lower())
+        """
+        Explicit override only. If user states a different name, update the user profile.
+        """
+        m = re.search(r"\b(my name is|i am|i'm)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)", text.strip(), flags=re.I)
         if m:
-            self.user_name = m.group(2).capitalize()
+            name = m.group(2).strip()
+            # Preserve capitalization nicely
+            self.user_name = " ".join([w.capitalize() for w in name.split()])
 
     def system_answer(self) -> str:
         return f"I am {self.system_name}, a modular cognitive system created by {self.creator}."
