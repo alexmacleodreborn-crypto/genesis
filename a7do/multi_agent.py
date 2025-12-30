@@ -2,24 +2,15 @@ import random
 
 class MultiAgent:
     def __init__(self):
-        self._last = {}
+        self.last_signals = {}
 
-    def run(self, prompt: str):
-        explorer = f"Exploring interpretations of: {prompt}"
-        critic = f"Challenging assumptions in: {prompt}"
-        integrator = f"Synthesised response to: {prompt}"
+    def run(self, text: str) -> dict:
+        z = [random.uniform(0.6, 1.2) for _ in range(100)]
+        sigma = [random.uniform(0.2, 1.0) for _ in range(100)]
 
-        # Generate fake but structured signals (replace with real math later)
-        z = [random.uniform(0.5, 1.2) for _ in range(100)]
-        sigma = [random.uniform(0.2, 1.1) for _ in range(100)]
-
-        self._last = {"z": z, "sigma": sigma}
+        self.last_signals = {"z": z, "sigma": sigma}
 
         return {
-            "explorer": explorer,
-            "critic": critic,
-            "final": integrator
+            "final": f"Synthesised response to: {text}",
+            "signals": self.last_signals
         }
-
-    def last_signals(self):
-        return self._last
