@@ -1,2 +1,2 @@
 # a7do package
-self.childhood = childhood
+self.childhood = childhood()
