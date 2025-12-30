@@ -12,7 +12,7 @@ from a7do.mind import A7DOMind
 st.set_page_config(page_title="A7DO Cognitive Interface", layout="wide")
 
 st.title("🧠 A7DO — Cognitive Interface")
-st.caption("Coherence-regulated cognition with confidence-based learning")
+st.caption("Developmental learning + coherence-regulated reasoning")
 
 if "mind" not in st.session_state:
     identity = Identity()
@@ -55,8 +55,8 @@ with st.sidebar:
     st.subheader("Identity")
     st.json({
         "user_name": identity.user_name,
-        "system_name": getattr(identity, "system_name", "A7DO"),
-        "creator": getattr(identity, "creator", "Alex Macleod"),
+        "system_name": identity.system_name,
+        "creator": identity.creator
     })
 
     st.subheader("Emotion")
@@ -67,6 +67,15 @@ with st.sidebar:
         "stage": development.STAGES[development.index],
         "index": development.index
     })
+
+    st.divider()
+
+    st.header("📚 Foundational Language Progress")
+    st.json(mind.curriculum.peek_progress())
+
+    if mind.last_curriculum_packet:
+        st.write("**Latest drip**")
+        st.json(mind.last_curriculum_packet)
 
     st.divider()
 
@@ -82,13 +91,6 @@ with st.sidebar:
 
     st.header("👤 Profiles")
     st.json(mind.profiles.summary())
-
-    st.divider()
-
-    st.header("✅ Learning Confidence")
-    st.write("**Candidates** = waiting to be confirmed")
-    st.write("**Facts** = promoted stable beliefs")
-
 
 user_text = st.text_input("Speak to A7DO")
 
@@ -113,20 +115,6 @@ if result:
         st.write(f"Status: **{coh.get('label', '—')}**")
     else:
         st.write("Coherence not evaluated for this path.")
-
-    st.subheader("🧠 Learning Confidence")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.write("### Candidates")
-        st.json(result.get("candidates", {}))
-
-    with col2:
-        st.write("### Facts (Promoted)")
-        st.json(result.get("facts", {}))
-
-    st.subheader("🗣 Speech Gate")
-    st.write(f"Action: **{result.get('speech_action', '—')}**")
 
     st.subheader("🌫 Background Density State")
     st.json(result.get("density", {}))
@@ -155,6 +143,5 @@ if result:
     st.subheader("💬 A7DO Response")
     st.markdown(f"> {result['answer']}")
 
-    if development.STAGES[development.index] in ["Birth", "Learning"]:
-        st.subheader("🧒 Childhood Learning")
-        st.json(childhood.summary())
+    st.subheader("📚 Foundational Learning (Latest)")
+    st.json(result.get("last_curriculum_packet"))
