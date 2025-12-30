@@ -1,4 +1,5 @@
 import time
+from a7do.coherence import CoherenceScorer
 
 
 class A7DOMind:
@@ -16,29 +17,26 @@ class A7DOMind:
         self.childhood = childhood
 
         self.events = []
-        self.last_signals = None  # 👈 IMPORTANT
+        self.path = []
+        self.last_signals = None
+        self.last_coherence = None
 
-    # --------------------------------------------------
-    # Internal logging
-    # --------------------------------------------------
+        self._coherence = CoherenceScorer()
 
     def emit(self, phase: str, message: str):
         self.events.append(f"[{phase}] {message}")
-        time.sleep(0.02)
-
-    # --------------------------------------------------
-    # Main cognitive cycle
-    # --------------------------------------------------
+        self.path.append(phase)
+        time.sleep(0.01)
 
     def process(self, text: str) -> dict:
         self.events.clear()
+        self.path.clear()
 
         self.emit("INPUT", "User input received")
 
-        # ----------------------------------------------
+        # -------------------------
         # Childhood learning (0–5)
-        # ----------------------------------------------
-
+        # -------------------------
         if self.development.STAGES[self.development.index] in ["Birth", "Learning"]:
             if not self.childhood.active:
                 self.childhood.start_burst()
@@ -49,27 +47,31 @@ class A7DOMind:
             if not self.childhood.is_active():
                 self.emit("CHILDHOOD", "Learning burst ended")
 
-        # ----------------------------------------------
-        # User self-introduction
-        # ----------------------------------------------
-
+        # -------------------------
+        # User introduction
+        # -------------------------
         if self.identity.is_user_introduction(text):
             self.emit("IDENTITY", "User identity detected")
             self.identity.capture_user(text)
             self.memory.add("identity", f"User is {self.identity.user_name}")
-            self.emit("OUTPUT", "Identity stored")
 
             self.last_signals = None
-
-            return self._result(
-                f"Nice to meet you, {self.identity.user_name}.",
-                None
+            self.last_coherence = self._coherence.score(
+                mode="recognition",
+                emotion_value=self.emotion.value,
+                signals=None
             )
 
-        # ----------------------------------------------
-        # System identity (recognition)
-        # ----------------------------------------------
+            self.emit("OUTPUT", "Identity stored")
+            return self._result(
+                f"Nice to meet you, {self.identity.user_name}.",
+                None,
+                "recognition"
+            )
 
+        # -------------------------
+        # System identity (recognition mode)
+        # -------------------------
         if self.identity.is_system_identity_question(text):
             self.emit("IDENTITY", "System identity recognised")
             self.emit("THINKING", "Recognition processing")
@@ -77,57 +79,63 @@ class A7DOMind:
             reasoning = self.multi_agent.run(text, mode="recognition")
             self.last_signals = reasoning["signals"]
 
-            self.emit("OUTPUT", "Identity answer ready")
-
-            return self._result(
-                self.identity.system_answer(),
-                reasoning["signals"]
+            self.last_coherence = self._coherence.score(
+                mode="recognition",
+                emotion_value=self.emotion.value,
+                signals=self.last_signals
             )
 
-        # ----------------------------------------------
-        # Emotional update
-        # ----------------------------------------------
+            self.emit("OUTPUT", "Identity answer ready")
+            return self._result(
+                self.identity.system_answer(),
+                self.last_signals,
+                "recognition"
+            )
 
+        # -------------------------
+        # Emotion update
+        # -------------------------
         self.emit("EMOTION", "Updating emotional state")
         self.emotion.update(text)
 
-        # ----------------------------------------------
-        # Deliberative reasoning
-        # ----------------------------------------------
-
+        # -------------------------
+        # Deliberation
+        # -------------------------
         self.emit("THINKING", "Deliberative reasoning")
         reasoning = self.multi_agent.run(text, mode="deliberation")
-
         self.last_signals = reasoning["signals"]
 
-        # ----------------------------------------------
+        # -------------------------
         # Memory
-        # ----------------------------------------------
-
+        # -------------------------
         self.emit("MEMORY", "Storing dialogue")
         self.memory.add("dialogue", text)
 
-        # ----------------------------------------------
+        # -------------------------
         # Development
-        # ----------------------------------------------
-
+        # -------------------------
         self.emit("DEVELOPMENT", "Updating development stage")
         self.development.update(self.memory)
 
-        self.emit("OUTPUT", "Answer ready")
-
-        return self._result(
-            reasoning["final"],
-            reasoning["signals"]
+        # -------------------------
+        # Coherence scoring (post)
+        # -------------------------
+        self.last_coherence = self._coherence.score(
+            mode="deliberation",
+            emotion_value=self.emotion.value,
+            signals=self.last_signals
         )
 
-    # --------------------------------------------------
-    # Output packaging
-    # --------------------------------------------------
+        self.emit("OUTPUT", "Answer ready")
 
-    def _result(self, answer, signals):
+        return self._result(reasoning["final"], self.last_signals, "deliberation")
+
+    def _result(self, answer, signals, mode: str):
         return {
             "answer": answer,
             "events": list(self.events),
-            "signals": signals
+            "path": list(self.path),
+            "signals": signals,
+            "mode": mode,
+            "coherence": self.last_coherence
         }
