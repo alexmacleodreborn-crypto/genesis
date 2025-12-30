@@ -105,7 +105,7 @@ st.write(f"Status: **{coh.get('label','—')}**")
     # Cognitive Timeline
     # ----------------------------------------------
 
-    st.subheader("🧠 Cognitive Activity")
+st.subheader("🧠 Cognitive Activity")
 
     for event in result["events"]:
         st.code(event)
