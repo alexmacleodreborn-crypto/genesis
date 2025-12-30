@@ -11,11 +11,11 @@ class EmotionalState:
             self.value *= 0.95
 
     def export(self):
-        return {"value": self.value, "label": self.label}
+        return {"value": round(self.value, 2), "label": self.label}
 
-    def character_panel(self) -> str:
+    def panel(self) -> str:
         return f"""
 **Emotion**
 - State: {self.label}
-- Intensity: {self.value:.2f}
+- Level: {self.value:.2f}
 """
