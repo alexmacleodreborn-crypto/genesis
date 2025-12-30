@@ -2,7 +2,7 @@ import streamlit as st
 import matplotlib.pyplot as plt
 
 # --------------------------------------------------
-# Import ONLY concrete modules (no circular imports)
+# Imports (constructors only, no side effects)
 # --------------------------------------------------
 
 from a7do.identity import Identity
@@ -14,7 +14,7 @@ from a7do.childhood import Childhood
 from a7do.mind import A7DOMind
 
 # --------------------------------------------------
-# Streamlit config
+# Streamlit configuration
 # --------------------------------------------------
 
 st.set_page_config(
@@ -23,13 +23,13 @@ st.set_page_config(
 )
 
 st.title("🧠 A7DO — Cognitive Interface")
+st.caption("A modular, coherence-driven cognitive engine")
 
 # --------------------------------------------------
-# Session-safe initialization (ONLY ONCE)
+# Session-safe initialization (runs ONCE)
 # --------------------------------------------------
 
 if "mind" not in st.session_state:
-
     identity = Identity()
     emotion = EmotionalState()
     memory = Memory()
@@ -46,7 +46,7 @@ if "mind" not in st.session_state:
         childhood=childhood
     )
 
-    # Store EVERYTHING for other pages (Inspector)
+    # Expose all components for inspector pages
     st.session_state["identity"] = identity
     st.session_state["emotion"] = emotion
     st.session_state["memory"] = memory
@@ -63,7 +63,6 @@ identity    = st.session_state["identity"]
 emotion     = st.session_state["emotion"]
 memory      = st.session_state["memory"]
 development = st.session_state["development"]
-multi_agent = st.session_state["multi_agent"]
 childhood   = st.session_state["childhood"]
 mind        = st.session_state["mind"]
 
@@ -73,14 +72,13 @@ mind        = st.session_state["mind"]
 
 with st.sidebar:
     st.header("🧬 Character Panel")
-
     st.markdown(identity.panel())
     st.markdown(emotion.panel())
     st.markdown(development.panel())
 
     st.divider()
 
-    st.header("🗂 Memory")
+    st.header("🗂 Memory (Summary)")
     st.json(memory.summary())
 
 # --------------------------------------------------
@@ -90,64 +88,69 @@ with st.sidebar:
 user_text = st.text_input("Speak to A7DO")
 
 if user_text:
-
+    # Run cognition
     result = mind.process(user_text)
-    
-    st.subheader("🧭 Mind Path")
-st.write(" → ".join(result.get("path", [])))
 
-st.subheader("✅ Coherence")
-coh = result.get("coherence") or {}
-st.metric("Coherence Score", coh.get("score", "—"))
-st.write(f"Status: **{coh.get('label','—')}**")
-
-    # ----------------------------------------------
+    # --------------------------------------------------
     # Cognitive Timeline
-    # ----------------------------------------------
+    # --------------------------------------------------
 
-st.subheader("🧠 Cognitive Activity")
+    st.subheader("🧠 Cognitive Activity")
+    for event in result["events"]:
+        st.code(event)
 
-for event in result["events"]:
-    st.code(event)
+    # --------------------------------------------------
+    # Mind Path
+    # --------------------------------------------------
 
-    # ----------------------------------------------
+    st.subheader("🧭 Mind Path")
+    st.write(" → ".join(result.get("path", [])))
+
+    # --------------------------------------------------
+    # Coherence
+    # --------------------------------------------------
+
+    st.subheader("✅ Coherence")
+    coh = result.get("coherence", {})
+    st.metric("Coherence Score", coh.get("score", "—"))
+    st.write(f"Status: **{coh.get('label', '—')}**")
+
+    # --------------------------------------------------
     # Reasoning Signals (Z–Σ)
-    # ----------------------------------------------
+    # --------------------------------------------------
 
-    signals = result.get("signals", {})
+    signals = result.get("signals")
 
-    if signals:
-        z = signals.get("z", [])
-        sigma = signals.get("sigma", [])
-        mode = signals.get("mode", "unknown")
+    if signals and signals.get("z") and signals.get("sigma"):
+        st.subheader(f"📈 Reasoning Signals (Z–Σ) — {signals.get('mode')}")
 
-        if z and sigma:
-            st.subheader(f"📈 Thought Dynamics ({mode})")
+        z = signals["z"]
+        sigma = signals["sigma"]
 
-            fig, ax = plt.subplots(2, 1, figsize=(9, 5))
+        fig, ax = plt.subplots(2, 1, figsize=(9, 5))
 
-            ax[0].plot(z, label="Z (Inhibition)")
-            ax[0].plot(sigma, label="Σ (Chaos)")
-            ax[0].legend()
-            ax[0].set_title("Constraint vs Exploration")
+        ax[0].plot(z, label="Z (Inhibition)")
+        ax[0].plot(sigma, label="Σ (Exploration)")
+        ax[0].legend()
+        ax[0].set_title("Constraint vs Exploration")
 
-            coherence = [s / (zv + 1e-3) for s, zv in zip(sigma, z)]
-            ax[1].plot(coherence)
-            ax[1].axhline(0.6, linestyle="--", color="yellow")
-            ax[1].set_title("Coherence Gate (Safe to Speak)")
+        coherence_trace = [s / (zv + 1e-3) for s, zv in zip(sigma, z)]
+        ax[1].plot(coherence_trace)
+        ax[1].axhline(0.6, linestyle="--", color="yellow")
+        ax[1].set_title("Coherence Gate (Safe to Speak)")
 
-            st.pyplot(fig)
+        st.pyplot(fig)
 
-    # ----------------------------------------------
+    # --------------------------------------------------
     # Final Output
-    # ----------------------------------------------
+    # --------------------------------------------------
 
     st.subheader("💬 A7DO Response")
     st.markdown(f"> {result['answer']}")
 
-    # ----------------------------------------------
-    # Childhood Learning Status (optional visibility)
-    # ----------------------------------------------
+    # --------------------------------------------------
+    # Childhood Learning (visible only in early stages)
+    # --------------------------------------------------
 
     if development.STAGES[development.index] in ["Birth", "Learning"]:
         st.subheader("🧒 Childhood Learning")
@@ -156,8 +159,8 @@ for event in result["events"]:
 
         if summary["active"]:
             st.info(
-                f"Childhood learning active "
-                f"({summary['seconds_remaining']}s remaining)"
+                f"Learning burst active — "
+                f"{summary['seconds_remaining']}s remaining"
             )
 
         if summary["imprints"]:
