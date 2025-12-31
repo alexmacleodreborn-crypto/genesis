@@ -41,8 +41,14 @@ with st.sidebar:
 
     # Identity panel
     st.subheader("Identity")
-    st.markdown(mind.identity.panel())
+    identity = mind.identity
 
+st.markdown("### 🧬 Identity")
+st.markdown(f"""
+**Name:** {identity.name}  
+**Creator:** {identity.creator}  
+**Type:** {identity.being_type}
+""")
     st.divider()
 
     # Coherence
