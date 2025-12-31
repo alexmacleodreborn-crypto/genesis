@@ -26,20 +26,22 @@ for e in mind.bridge.entities.values():
         shape="ellipse",
     )
 
-# ---- Edges: first-class relationships ----
+# ---- Edges: confirmed relationships ----
 for r in mind.relationships.all():
     if r.subject_id in mind.bridge.entities and r.object_id in mind.bridge.entities:
         G.add_edge(r.subject_id, r.object_id, label=r.rel_type)
 
-# ---- Fallback: old owner_name edges (only if no relationship exists) ----
-# (keeps backwards compatibility if you have older stored entities)
-existing_pairs = {(r.subject_id, r.object_id, r.rel_type) for r in mind.relationships.all()}
-for e in mind.bridge.entities.values():
-    if e.owner_name:
-        owner = mind.bridge.find_entity(e.owner_name, owner_name=None)
-        if owner:
-            if (owner.entity_id, e.entity_id, "pet") not in existing_pairs and (owner.entity_id, e.entity_id, "owns") not in existing_pairs:
-                G.add_edge(owner.entity_id, e.entity_id, label="owns")
+# ---- Edges: pending relationships (dashed red) ----
+for p in mind.pending_relationships.list_pending():
+    if p.subject_id in mind.bridge.entities and p.object_id in mind.bridge.entities:
+        # store style attributes as node metadata (pyvis will read later)
+        G.add_edge(
+            p.subject_id,
+            p.object_id,
+            label=f"{p.rel_type}? ({p.confidence:.2f})",
+            color="red",
+            dashes=True,
+        )
 
 # ---- Event nodes + edges ----
 for ev in mind.events_graph.events.values():
@@ -57,6 +59,14 @@ for ev in mind.events_graph.events.values():
 # ---- Render ----
 net = Network(height="750px", width="100%", bgcolor="#ffffff", font_color="black")
 net.from_nx(G)
+
+# Apply dashed edges (networkx -> pyvis loses some attrs, so patch them)
+for e in net.edges:
+    # if our label contains "?" we treat it as pending
+    if isinstance(e.get("label"), str) and "?" in e["label"]:
+        e["color"] = "red"
+        e["dashes"] = True
+
 net.toggle_physics(True)
 
 with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp:
