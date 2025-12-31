@@ -1,51 +1,128 @@
 import streamlit as st
+from a7do.mind import A7DOMind
 
-st.set_page_config(layout="wide")
-st.title("🧠 Mind Inspector")
+st.set_page_config(
+    page_title="A7DO – Mind Inspector",
+    layout="wide"
+)
 
-mind = st.session_state.get("mind")
-if not mind:
-    st.error("Mind not initialised.")
-    st.stop()
+st.title("🔍 A7DO Mind Inspector")
 
-st.subheader("🧠 Cognitive Activity Log")
-if getattr(mind, "log", None):
-    for entry in mind.log:
-        st.code(entry)
+# -------------------------------------------------
+# Session
+# -------------------------------------------------
+
+if "mind" not in st.session_state:
+    st.session_state.mind = A7DOMind()
+
+mind: A7DOMind = st.session_state.mind
+
+# -------------------------------------------------
+# Helper: get memory frames safely
+# -------------------------------------------------
+
+def get_event_frames(memory, limit=50):
+    """
+    Defensive accessor for event/memory frames.
+    Supports multiple memory implementations.
+    """
+    # Case 1: legacy .frames
+    if hasattr(memory, "frames"):
+        try:
+            frames = memory.frames
+            return frames[-limit:] if frames else []
+        except Exception:
+            pass
+
+    # Case 2: common containers
+    for attr in ("items", "entries", "events"):
+        if hasattr(memory, attr):
+            try:
+                frames = getattr(memory, attr)
+                return frames[-limit:] if frames else []
+            except Exception:
+                pass
+
+    # Case 3: method-based access
+    if hasattr(memory, "recent") and callable(memory.recent):
+        try:
+            return memory.recent(n=limit) or []
+        except Exception:
+            pass
+
+    # Case 4: iterable memory
+    try:
+        frames = list(memory)
+        return frames[-limit:]
+    except Exception:
+        pass
+
+    return []
+
+# -------------------------------------------------
+# Event / Memory stream
+# -------------------------------------------------
+
+st.subheader("📜 Event / Memory Stream")
+
+event_memory = mind.events  # alias to memory
+frames = get_event_frames(event_memory)
+
+if not frames:
+    st.info("No events recorded yet.")
 else:
-    st.caption("No cognitive log entries yet.")
+    for i, frame in enumerate(reversed(frames), start=1):
+        with st.expander(f"Event {len(frames) - i + 1}", expanded=False):
+            if isinstance(frame, dict):
+                st.json(frame)
+            else:
+                # Best-effort display
+                st.write(frame)
 
-st.subheader("🧩 Event Frames (Flow Memory)")
-event_memory = mind.events
-if not event_memory.frames:
-    st.caption("No events recorded yet.")
+# -------------------------------------------------
+# Pending Entities
+# -------------------------------------------------
+
+st.subheader("🧩 Pending Entities")
+
+pending = getattr(mind.bridge, "pending", {})
+if not pending:
+    st.caption("No pending entities.")
 else:
-    for evt in event_memory.frames[-10:]:
-        with st.expander(f"{evt.event_id} · {round(evt.t1 - evt.t0, 2)}s"):
-            st.json(evt.snapshot())
+    for p in pending.values():
+        st.write(
+            f"• **{p.name}** "
+            f"(guess={p.kind_guess}, confidence={p.confidence:.2f}, seen={p.count})"
+        )
 
-st.subheader("🧬 Entity Life-Streams (Silos)")
-if not event_memory.silos:
-    st.caption("No silos yet.")
+# -------------------------------------------------
+# Entity Graph
+# -------------------------------------------------
+
+st.subheader("🗂️ Entity Graph")
+
+entities = getattr(mind.bridge, "entities", {})
+if not entities:
+    st.caption("No promoted entities yet.")
 else:
-    for entity_id, event_ids in event_memory.silos.items():
-        with st.expander(f"Entity {entity_id}"):
-            st.write(event_ids)
+    for e in entities.values():
+        st.markdown(
+            f"""
+**{e.name}**  
+Type: `{e.kind}`  
+Owner: `{e.owner_name or "—"}`  
+Aliases: {", ".join(e.aliases) if e.aliases else "—"}
+"""
+        )
 
-st.subheader("🔁 Reoccurrence")
-st.json(mind.reoccurrence.summary())
+# -------------------------------------------------
+# System Signal
+# -------------------------------------------------
 
-st.subheader("🧩 Entity Graph")
-st.json(mind.entities.summary())
+st.subheader("📡 System Signal")
 
-st.subheader("✅ Fact Ledger")
-st.json(mind.facts.summary())
-
-st.subheader("🏷 Unbound Proper Nouns")
-st.json(mind.unbound_names)
-
-st.subheader("🧠 Linguistic Role Guard (LRG) Quick Test")
-test_text = st.text_input("Type a sentence to inspect roles", "My dog is called Xena and I feel excited at the park")
-roles = mind.lrg.classify(test_text)
-st.json([{"text": r.text, "role": r.role} for r in roles])
-st.write("Naming context:", mind.lrg.is_naming_context(test_text))
+signal = getattr(mind, "_last_signal", None)
+if signal:
+    st.json(signal)
+else:
+    st.caption("No system signals emitted yet.")
