@@ -1,203 +1,137 @@
 import streamlit as st
-import time
-import inspect
-
 from a7do.mind import A7DOMind
 
 # -------------------------------------------------
 # Page config
 # -------------------------------------------------
-
 st.set_page_config(
-    page_title="A7DO Cognitive Engine",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="A7DO Cognitive Interface",
+    layout="centered",
 )
 
-st.title("🧠 A7DO – Flow Cognitive Engine")
-st.caption("Event-based learning · Entity grounding · Reflection · Sleep")
+st.title("🧠 A7DO Cognitive Interface")
+st.caption("Grounded cognition · Explicit learning · Inspectable memory")
 
 # -------------------------------------------------
 # Session state
 # -------------------------------------------------
-
 if "mind" not in st.session_state:
     st.session_state.mind = A7DOMind()
 
 if "history" not in st.session_state:
     st.session_state.history = []
 
-if "last_result" not in st.session_state:
-    st.session_state.last_result = None
-
 mind: A7DOMind = st.session_state.mind
 
 # -------------------------------------------------
-# Helper: render Identity safely
+# Identity panel (safe)
 # -------------------------------------------------
-
-def render_identity(identity):
-    """
-    Renders identity without assuming any attribute names.
-    Works with dict-based, property-based, or method-based Identity classes.
-    """
-    st.subheader("🧬 Identity")
-
-    # Case 1: Identity exposes a describe() method
-    if hasattr(identity, "describe") and callable(identity.describe):
-        st.markdown(identity.describe())
-        return
-
-    # Case 2: Identity exposes a to_dict() method
-    if hasattr(identity, "to_dict") and callable(identity.to_dict):
-        data = identity.to_dict()
-        for k, v in data.items():
-            st.markdown(f"**{k.capitalize()}:** {v}")
-        return
-
-    # Case 3: Inspect public attributes
-    fields = {}
-    for attr in dir(identity):
-        if attr.startswith("_"):
-            continue
-        value = getattr(identity, attr)
-        if callable(value):
-            continue
-        fields[attr] = value
-
-    if fields:
-        for k, v in fields.items():
-            st.markdown(f"**{k}:** {v}")
-    else:
-        st.caption("Identity structure not yet exposed.")
+with st.expander("🧬 Identity", expanded=True):
+    identity = mind.identity
+    st.markdown(
+        f"""
+**Name:** {getattr(identity, "name", "A7DO")}  
+**Creator:** {getattr(identity, "creator", "Unknown")}  
+**Type:** {getattr(identity, "being_type", "Cognitive System")}
+"""
+    )
 
 # -------------------------------------------------
-# Sidebar – Mind State
+# Chat input
 # -------------------------------------------------
-
-with st.sidebar:
-    st.header("🧩 Mind State")
-
-    # -----------------------------
-    # Identity (robust rendering)
-    # -----------------------------
-    render_identity(mind.identity)
-
-    st.divider()
-
-    # -----------------------------
-    # Coherence
-    # -----------------------------
-    if st.session_state.last_result:
-        coh = st.session_state.last_result.get("coherence", {})
-        st.metric("Coherence Score", coh.get("score", "—"))
-        if coh.get("label"):
-            st.caption(coh["label"])
-
-    st.divider()
-
-    # -----------------------------
-    # Sleep / system signal
-    # -----------------------------
-    if st.session_state.last_result:
-        signal = st.session_state.last_result.get("signal")
-        if signal:
-            if signal["kind"] == "SLEEP":
-                st.info(f"🛌 {signal['message']}")
-            else:
-                st.caption(f"{signal['kind']}: {signal['message']}")
-
-    st.divider()
-
-    # -----------------------------
-    # Reflections
-    # -----------------------------
-    st.subheader("🪞 Reflections")
-
-    if st.session_state.last_result:
-        reflections = st.session_state.last_result.get("reflections", {})
-        if not reflections:
-            st.caption("No active reflections yet.")
-        else:
-            for entity_id, refls in reflections.items():
-                if not refls:
-                    continue
-                st.markdown(f"**Entity:** `{entity_id}`")
-                for r in refls:
-                    st.write(
-                        f"- {r['pattern']} "
-                        f"(score={r['score']}, band={r['band']})"
-                    )
-
-    st.divider()
-
-    # -----------------------------
-    # Pending entities (bridge)
-    # -----------------------------
-    st.subheader("🧩 Pending Entities")
-
-    if st.session_state.last_result:
-        pending = st.session_state.last_result.get("pending_entities", [])
-        if not pending:
-            st.caption("No pending entities.")
-        else:
-            for p in pending:
-                st.write(
-                    f"• **{p['name']}** "
-                    f"(guess={p['kind_guess']}, "
-                    f"confidence={p['confidence']})"
-                )
-
-    st.divider()
-
-    # -----------------------------
-    # Recent interaction history
-    # -----------------------------
-    st.subheader("📚 Recent Inputs")
-    for h in st.session_state.history[-5:][::-1]:
-        st.caption(h["text"])
-
-# -------------------------------------------------
-# Main interaction area
-# -------------------------------------------------
-
-st.subheader("💬 Interaction")
+st.subheader("💬 Speak to A7DO")
 
 user_text = st.text_input(
-    "Say something to A7DO",
-    placeholder="Hello…",
-    key="input_text"
+    "Enter a message",
+    placeholder="Try: 'My name is Alex Macleod' or 'Xena is my dog'",
 )
 
-send = st.button("Send")
+if user_text:
+    result = mind.process(user_text)
+    st.session_state.history.append(
+        {
+            "user": user_text,
+            "result": result,
+        }
+    )
 
 # -------------------------------------------------
-# Process input
+# Conversation display
 # -------------------------------------------------
+if st.session_state.history:
+    st.subheader("🗨️ Conversation")
 
-if send and user_text.strip():
-    with st.spinner("A7DO is processing…"):
-        result = mind.process(user_text)
+    for turn in st.session_state.history[::-1]:
+        st.markdown(f"**You:** {turn['user']}")
 
-    st.session_state.history.append({"text": user_text})
-    st.session_state.last_result = result
+        answer = turn["result"].get("answer", "—")
+        st.markdown(f"**A7DO:** {answer}")
 
-    time.sleep(0.15)
+        tags = turn["result"].get("tags")
+        if tags:
+            st.caption(f"Tags: {', '.join(tags)}")
+
+        coherence = turn["result"].get("coherence")
+        if isinstance(coherence, dict):
+            score = coherence.get("score")
+            if score is not None:
+                st.caption(f"Coherence score: {score}")
+
+        st.divider()
 
 # -------------------------------------------------
-# Response
+# Background density (debug / insight)
 # -------------------------------------------------
+with st.expander("🌫️ Background Density"):
+    bg = mind.background
+    summary = {}
 
-if st.session_state.last_result:
-    st.subheader("🗣️ A7DO Response")
-    st.markdown(st.session_state.last_result["answer"])
+    for attr in ("queue_len", "working_len", "last_queue_item_tags"):
+        if hasattr(bg, attr):
+            summary[attr] = getattr(bg, attr)
 
-# -------------------------------------------------
-# Inspector / Debug
-# -------------------------------------------------
-
-with st.expander("🔍 Mind Inspector", expanded=False):
-    if st.session_state.last_result:
-        st.json(st.session_state.last_result)
+    if summary:
+        st.json(summary)
     else:
-        st.caption("No activity yet.")
+        st.caption("No background activity yet.")
+
+# -------------------------------------------------
+# Pending entities (read-only here)
+# -------------------------------------------------
+with st.expander("🧩 Pending Entities"):
+    pending = mind.bridge.pending
+    if not pending:
+        st.caption("No pending entities.")
+    else:
+        for p in pending.values():
+            st.write(
+                f"• **{p.name}** "
+                f"(confidence={p.confidence:.2f}, seen={p.count})"
+            )
+
+# -------------------------------------------------
+# Entity graph (read-only here)
+# -------------------------------------------------
+with st.expander("🗂️ Entity Graph"):
+    entities = mind.bridge.entities
+    if not entities:
+        st.caption("No promoted entities yet.")
+    else:
+        for e in entities.values():
+            st.markdown(
+                f"""
+**{e.name}**  
+Type: `{e.kind}`  
+Aliases: {", ".join(e.aliases) if e.aliases else "—"}
+"""
+            )
+
+# -------------------------------------------------
+# System signal
+# -------------------------------------------------
+with st.expander("📡 System Signal"):
+    signal = getattr(mind, "_last_signal", None)
+    if signal:
+        st.json(signal)
+    else:
+        st.caption("No system signals emitted yet.")
