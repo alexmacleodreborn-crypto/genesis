@@ -17,9 +17,10 @@ class A7DOMind:
     """
     Central cognitive orchestrator for A7DO.
 
-    Defensive integrations:
-    - Adapts to Memory.add signature
-    - No assumptions about Identity/Profile internals
+    Fully defensive:
+    - No assumptions about Identity helpers
+    - No assumptions about Memory API
+    - Entity promotion gated and explicit
     """
 
     def __init__(self):
@@ -41,7 +42,7 @@ class A7DOMind:
         self._memory_add_sig = inspect.signature(self.memory.add)
 
     # -----------------------------
-    # Internal helper
+    # Internal helpers
     # -----------------------------
     def emit(self, kind: str, message: str):
         self._last_signal = {
@@ -51,15 +52,11 @@ class A7DOMind:
         }
 
     def _memory_add_safe(self, **kwargs):
-        """
-        Call memory.add with only supported parameters.
-        """
         supported = {}
         for name in self._memory_add_sig.parameters:
             if name in kwargs:
                 supported[name] = kwargs[name]
 
-        # Fallback: positional add(kind, content)
         try:
             self.memory.add(**supported)
         except TypeError:
@@ -69,8 +66,35 @@ class A7DOMind:
                     kwargs.get("content")
                 )
             except Exception:
-                # Last-resort: do nothing (memory loss is safer than crash)
-                pass
+                pass  # never crash cognition for storage
+
+    def _identity_handles_question(self, text: str) -> bool:
+        if hasattr(self.identity, "is_identity_question") and callable(
+            self.identity.is_identity_question
+        ):
+            try:
+                return self.identity.is_identity_question(text)
+            except Exception:
+                return False
+        return False
+
+    def _identity_respond(self, text: str):
+        if hasattr(self.identity, "respond") and callable(self.identity.respond):
+            try:
+                return self.identity.respond(None)
+            except Exception:
+                return None
+        return None
+
+    def _identity_default(self):
+        if hasattr(self.identity, "default_response") and callable(
+            self.identity.default_response
+        ):
+            try:
+                return self.identity.default_response(None)
+            except Exception:
+                return None
+        return "I’m here and learning."
 
     # -----------------------------
     # Main cognitive loop
@@ -83,7 +107,7 @@ class A7DOMind:
         if isinstance(tags, dict):
             tags = tags.get("tags", [])
 
-        # 2) Speaker / owner
+        # 2) Speaker / owner (default)
         owner_name = getattr(self.identity, "creator", None) or "Alex Macleod"
 
         # 3) Entity Promotion Bridge
@@ -94,7 +118,7 @@ class A7DOMind:
             if t not in tags:
                 tags.append(t)
 
-        # 4) Memory (safe call)
+        # 4) Memory
         self._memory_add_safe(
             kind="utterance",
             content=text,
@@ -108,6 +132,7 @@ class A7DOMind:
         answer = None
         lowered = text.lower().strip()
 
+        # Entity queries
         if lowered.startswith("who is "):
             name = text[7:].strip(" ?!.")
             desc = self.bridge.describe(name)
@@ -123,11 +148,13 @@ class A7DOMind:
                         f"Is {p.name} a person, a pet, or something else?"
                     )
 
-        if answer is None and self.identity.is_identity_question(text):
-            answer = self.identity.respond(None)
+        # Identity queries (safe)
+        if answer is None and self._identity_handles_question(text):
+            answer = self._identity_respond(text)
 
+        # Default response
         if answer is None:
-            answer = self.identity.default_response(None)
+            answer = self._identity_default()
 
         # 6) Coherence
         coherence = self.coherence.evaluate(text=text, tags=tags)
