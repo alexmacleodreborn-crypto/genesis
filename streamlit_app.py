@@ -3,9 +3,9 @@ import time
 
 from a7do.mind import A7DOMind
 
-# ----------------------------------------
-# Page configuration
-# ----------------------------------------
+# -------------------------------------------------
+# Page config
+# -------------------------------------------------
 
 st.set_page_config(
     page_title="A7DO Cognitive Engine",
@@ -14,11 +14,11 @@ st.set_page_config(
 )
 
 st.title("🧠 A7DO – Flow Cognitive Engine")
-st.caption("Event-based learning • Reflection • Sleep • Coherence")
+st.caption("Event-based learning · Entity grounding · Reflection · Sleep")
 
-# ----------------------------------------
-# Session state initialisation
-# ----------------------------------------
+# -------------------------------------------------
+# Session state
+# -------------------------------------------------
 
 if "mind" not in st.session_state:
     st.session_state.mind = A7DOMind()
@@ -29,40 +29,45 @@ if "history" not in st.session_state:
 if "last_result" not in st.session_state:
     st.session_state.last_result = None
 
-
 mind: A7DOMind = st.session_state.mind
 
-# ----------------------------------------
+# -------------------------------------------------
 # Sidebar – Mind State
-# ----------------------------------------
+# -------------------------------------------------
 
 with st.sidebar:
     st.header("🧩 Mind State")
 
-    # Identity panel
-    st.subheader("Identity")
-    identity = mind.identity
+    # -----------------------------
+    # Identity (Option A: UI only)
+    # -----------------------------
+    st.subheader("🧬 Identity")
 
-st.markdown("### 🧬 Identity")
-st.markdown(f"""
+    identity = mind.identity
+    st.markdown(
+        f"""
 **Name:** {identity.name}  
 **Creator:** {identity.creator}  
 **Type:** {identity.being_type}
-""")
+"""
+    )
+
     st.divider()
 
+    # -----------------------------
     # Coherence
+    # -----------------------------
     if st.session_state.last_result:
         coh = st.session_state.last_result.get("coherence", {})
-        st.metric(
-            "Coherence Score",
-            coh.get("score", "—")
-        )
-        st.caption(coh.get("label", ""))
+        st.metric("Coherence Score", coh.get("score", "—"))
+        if coh.get("label"):
+            st.caption(coh["label"])
 
     st.divider()
 
-    # Sleep / thinking signal
+    # -----------------------------
+    # Sleep / system signal
+    # -----------------------------
     if st.session_state.last_result:
         signal = st.session_state.last_result.get("signal")
         if signal:
@@ -73,7 +78,9 @@ st.markdown(f"""
 
     st.divider()
 
+    # -----------------------------
     # Reflections (awareness)
+    # -----------------------------
     st.subheader("🪞 Reflections")
 
     if st.session_state.last_result:
@@ -93,14 +100,35 @@ st.markdown(f"""
 
     st.divider()
 
-    # Recent memory (raw)
-    st.subheader("📚 Recent Events")
-    for h in st.session_state.history[-5:][::-1]:
-        st.caption(f"[{h['event_id']}] {h['text']}")
+    # -----------------------------
+    # Pending entities (bridge)
+    # -----------------------------
+    st.subheader("🧩 Pending Entities")
 
-# ----------------------------------------
+    if st.session_state.last_result:
+        pending = st.session_state.last_result.get("pending_entities", [])
+        if not pending:
+            st.caption("No pending entities.")
+        else:
+            for p in pending:
+                st.write(
+                    f"• **{p['name']}** "
+                    f"(guess={p['kind_guess']}, "
+                    f"confidence={p['confidence']})"
+                )
+
+    st.divider()
+
+    # -----------------------------
+    # Recent interaction history
+    # -----------------------------
+    st.subheader("📚 Recent Inputs")
+    for h in st.session_state.history[-5:][::-1]:
+        st.caption(h["text"])
+
+# -------------------------------------------------
 # Main interaction area
-# ----------------------------------------
+# -------------------------------------------------
 
 st.subheader("💬 Interaction")
 
@@ -112,36 +140,31 @@ user_text = st.text_input(
 
 send = st.button("Send")
 
-# ----------------------------------------
+# -------------------------------------------------
 # Process input
-# ----------------------------------------
+# -------------------------------------------------
 
 if send and user_text.strip():
     with st.spinner("A7DO is processing…"):
         result = mind.process(user_text)
 
-    # Save history
-    st.session_state.history.append({
-        "text": user_text,
-        "event_id": result["event_id"]
-    })
-
+    st.session_state.history.append({"text": user_text})
     st.session_state.last_result = result
 
-    # Small pause for cognitive feel
-    time.sleep(0.2)
+    # tiny pause for cognitive feel
+    time.sleep(0.15)
 
-# ----------------------------------------
-# Display response
-# ----------------------------------------
+# -------------------------------------------------
+# Response
+# -------------------------------------------------
 
 if st.session_state.last_result:
     st.subheader("🗣️ A7DO Response")
     st.markdown(st.session_state.last_result["answer"])
 
-# ----------------------------------------
-# Inspector / Debug View
-# ----------------------------------------
+# -------------------------------------------------
+# Inspector / Debug
+# -------------------------------------------------
 
 with st.expander("🔍 Mind Inspector", expanded=False):
     if st.session_state.last_result:
