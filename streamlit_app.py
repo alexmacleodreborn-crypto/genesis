@@ -1,5 +1,6 @@
 import streamlit as st
 import time
+import inspect
 
 from a7do.mind import A7DOMind
 
@@ -32,6 +33,45 @@ if "last_result" not in st.session_state:
 mind: A7DOMind = st.session_state.mind
 
 # -------------------------------------------------
+# Helper: render Identity safely
+# -------------------------------------------------
+
+def render_identity(identity):
+    """
+    Renders identity without assuming any attribute names.
+    Works with dict-based, property-based, or method-based Identity classes.
+    """
+    st.subheader("🧬 Identity")
+
+    # Case 1: Identity exposes a describe() method
+    if hasattr(identity, "describe") and callable(identity.describe):
+        st.markdown(identity.describe())
+        return
+
+    # Case 2: Identity exposes a to_dict() method
+    if hasattr(identity, "to_dict") and callable(identity.to_dict):
+        data = identity.to_dict()
+        for k, v in data.items():
+            st.markdown(f"**{k.capitalize()}:** {v}")
+        return
+
+    # Case 3: Inspect public attributes
+    fields = {}
+    for attr in dir(identity):
+        if attr.startswith("_"):
+            continue
+        value = getattr(identity, attr)
+        if callable(value):
+            continue
+        fields[attr] = value
+
+    if fields:
+        for k, v in fields.items():
+            st.markdown(f"**{k}:** {v}")
+    else:
+        st.caption("Identity structure not yet exposed.")
+
+# -------------------------------------------------
 # Sidebar – Mind State
 # -------------------------------------------------
 
@@ -39,18 +79,9 @@ with st.sidebar:
     st.header("🧩 Mind State")
 
     # -----------------------------
-    # Identity (Option A: UI only)
+    # Identity (robust rendering)
     # -----------------------------
-    st.subheader("🧬 Identity")
-
-    identity = mind.identity
-    st.markdown(
-        f"""
-**Name:** {identity.name}  
-**Creator:** {identity.creator}  
-**Type:** {identity.being_type}
-"""
-    )
+    render_identity(mind.identity)
 
     st.divider()
 
@@ -79,7 +110,7 @@ with st.sidebar:
     st.divider()
 
     # -----------------------------
-    # Reflections (awareness)
+    # Reflections
     # -----------------------------
     st.subheader("🪞 Reflections")
 
@@ -151,7 +182,6 @@ if send and user_text.strip():
     st.session_state.history.append({"text": user_text})
     st.session_state.last_result = result
 
-    # tiny pause for cognitive feel
     time.sleep(0.15)
 
 # -------------------------------------------------
