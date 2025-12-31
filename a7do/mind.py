@@ -19,27 +19,36 @@ CANCEL_WORDS = {"no", "cancel", "stop"}
 
 class A7DOMind:
     """
-    FINAL STABLE COGNITIVE CORE
-    --------------------------
-    - Defensive identity handling
-    - Explicit entity confirmation
+    A7DO Cognitive Core — FINAL STABLE FOUNDATION
+
+    Guarantees:
+    - No crashes from missing bridge APIs
+    - Explicit entity confirmation only
     - Narrative input always allowed
+    - Identity handled defensively
+    - Memory = event stream
     """
 
     def __init__(self):
+        # Core systems
         self.identity = Identity()
         self.memory = Memory()
         self.tagger = Tagger()
         self.coherence = CoherenceScorer()
         self.background = BackgroundDensity()
 
+        # Reflection & sleep
         self.reflections = ReflectionStore()
         self.sleep_engine = SleepEngine(self.reflections)
         self._events_since_sleep = 0
 
+        # Entity grounding
         self.bridge = EntityPromotionBridge()
+
+        # Signals
         self._last_signal = None
 
+        # Safe memory.add inspection
         self._memory_add_sig = inspect.signature(self.memory.add)
 
         # Confirmation state
@@ -50,6 +59,7 @@ class A7DOMind:
     # -------------------------------------------------
     @property
     def events(self):
+        """Inspector compatibility: events == memory"""
         return self.memory
 
     # -------------------------------------------------
@@ -73,7 +83,7 @@ class A7DOMind:
             pass
 
     # -------------------------------------------------
-    # Identity handling (SAFE)
+    # SAFE identity handling
     # -------------------------------------------------
     def _identity_question_safe(self, text: str) -> bool:
         if hasattr(self.identity, "is_identity_question"):
@@ -83,7 +93,7 @@ class A7DOMind:
                 return False
 
         t = text.lower()
-        return any(p in t for p in ["who are you", "what are you", "your name"])
+        return any(p in t for p in ("who are you", "what are you", "your name"))
 
     def _identity_respond_safe(self):
         if hasattr(self.identity, "respond"):
@@ -102,7 +112,34 @@ class A7DOMind:
         return "I’m learning from what you tell me."
 
     # -------------------------------------------------
-    # Confirmation intent detection
+    # SAFE entity confirmation adapter
+    # -------------------------------------------------
+    def _confirm_entity_safe(self, **kwargs) -> bool:
+        """
+        Attempt to confirm/promote an entity without assuming
+        the bridge API exists.
+        """
+        bridge = self.bridge
+
+        if hasattr(bridge, "confirm_entity") and callable(bridge.confirm_entity):
+            try:
+                bridge.confirm_entity(**kwargs)
+                return True
+            except Exception:
+                return False
+
+        for name in ("promote", "promote_entity", "confirm"):
+            if hasattr(bridge, name) and callable(getattr(bridge, name)):
+                try:
+                    getattr(bridge, name)(**kwargs)
+                    return True
+                except Exception:
+                    return False
+
+        return False
+
+    # -------------------------------------------------
+    # Confirmation intent detection (STRICT)
     # -------------------------------------------------
     def _detect_confirmation_intent(self, text: str):
         t = text.lower().strip()
@@ -131,7 +168,7 @@ class A7DOMind:
         return None
 
     # -------------------------------------------------
-    # Coherence (safe)
+    # SAFE coherence
     # -------------------------------------------------
     def _evaluate_coherence_safe(self, text, tags):
         try:
@@ -140,13 +177,15 @@ class A7DOMind:
             return {"score": 0.5, "label": "neutral"}
 
     # -------------------------------------------------
-    # Main cognitive loop
+    # MAIN cognitive loop
     # -------------------------------------------------
     def process(self, text: str) -> Dict[str, Any]:
         now = time.time()
         lowered = text.lower().strip()
 
         tags = self.tagger.tag(text) or []
+
+        # Always record memory
         self._memory_add_safe(
             kind="utterance",
             content=text,
@@ -155,20 +194,31 @@ class A7DOMind:
         )
 
         # ---------------------------------------------
-        # Handle confirmation replies ONLY if matched
+        # Handle confirmation replies (ONLY if matched)
         # ---------------------------------------------
         if self._pending_confirmation:
+            p = self._pending_confirmation
+
             if lowered in CONFIRM_WORDS:
-                p = self._pending_confirmation
-                self.bridge.confirm_entity(
+                ok = self._confirm_entity_safe(
                     name=p["name"],
                     kind=p["kind"],
                     is_self=p.get("is_self", False),
                     is_creator=p.get("is_creator", False),
                 )
                 self._pending_confirmation = None
+
+                if ok:
+                    return {
+                        "answer": f"Confirmed. I now know who **{p['name']}** is.",
+                        "tags": tags,
+                    }
+
                 return {
-                    "answer": f"Confirmed. I now know who **{p['name']}** is.",
+                    "answer": (
+                        f"I’ve noted the confirmation for **{p['name']}**, "
+                        f"but my entity system isn’t ready to lock it in yet."
+                    ),
                     "tags": tags,
                 }
 
@@ -179,7 +229,7 @@ class A7DOMind:
                     "tags": tags,
                 }
 
-            # Otherwise: exit confirmation mode and continue normally
+            # Narrative input → exit confirmation mode
             self._pending_confirmation = None
 
         # ---------------------------------------------
@@ -188,11 +238,18 @@ class A7DOMind:
         intent = self._detect_confirmation_intent(text)
         if intent:
             if "alias" in intent:
-                self.bridge.add_alias(intent["name"], intent["alias"])
-                return {
-                    "answer": f"Noted. **{intent['alias']}** is now an alias for **{intent['name']}**.",
-                    "tags": tags,
-                }
+                if hasattr(self.bridge, "add_alias"):
+                    try:
+                        self.bridge.add_alias(intent["name"], intent["alias"])
+                        return {
+                            "answer": (
+                                f"Noted. **{intent['alias']}** is now an alias "
+                                f"for **{intent['name']}**."
+                            ),
+                            "tags": tags,
+                        }
+                    except Exception:
+                        pass
 
             self._pending_confirmation = intent
             return {
@@ -228,7 +285,7 @@ class A7DOMind:
                     "confidence": p.confidence,
                     "count": p.count,
                 }
-                for p in self.bridge.pending.values()
+                for p in getattr(self.bridge, "pending", {}).values()
             ],
             "entity_graph": [
                 {
@@ -236,6 +293,6 @@ class A7DOMind:
                     "kind": e.kind,
                     "aliases": e.aliases,
                 }
-                for e in self.bridge.entities.values()
+                for e in getattr(self.bridge, "entities", {}).values()
             ],
         }
