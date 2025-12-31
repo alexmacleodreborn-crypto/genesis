@@ -1,4 +1,5 @@
 import time
+import inspect
 from typing import Dict, Any
 
 from a7do.identity import Identity
@@ -16,11 +17,9 @@ class A7DOMind:
     """
     Central cognitive orchestrator for A7DO.
 
-    Design notes:
-    - Memory IS the event stream
-    - Profile system is optional / future
-    - Entity promotion is gated + explicit
-    - Sleep & reflection are safe and per-entity
+    Defensive integrations:
+    - Adapts to Memory.add signature
+    - No assumptions about Identity/Profile internals
     """
 
     def __init__(self):
@@ -30,18 +29,19 @@ class A7DOMind:
         self.coherence = CoherenceScorer()
         self.background = BackgroundDensity()
 
-        # Reflection + sleep
         self.reflections = ReflectionStore()
         self.sleep_engine = SleepEngine(self.reflections)
         self._events_since_sleep = 0
 
-        # Entity promotion bridge
         self.bridge = EntityPromotionBridge()
 
         self._last_signal = None
 
+        # Inspect memory.add once
+        self._memory_add_sig = inspect.signature(self.memory.add)
+
     # -----------------------------
-    # Internal signal helper
+    # Internal helper
     # -----------------------------
     def emit(self, kind: str, message: str):
         self._last_signal = {
@@ -49,6 +49,28 @@ class A7DOMind:
             "message": message,
             "time": time.time()
         }
+
+    def _memory_add_safe(self, **kwargs):
+        """
+        Call memory.add with only supported parameters.
+        """
+        supported = {}
+        for name in self._memory_add_sig.parameters:
+            if name in kwargs:
+                supported[name] = kwargs[name]
+
+        # Fallback: positional add(kind, content)
+        try:
+            self.memory.add(**supported)
+        except TypeError:
+            try:
+                self.memory.add(
+                    kwargs.get("kind"),
+                    kwargs.get("content")
+                )
+            except Exception:
+                # Last-resort: do nothing (memory loss is safer than crash)
+                pass
 
     # -----------------------------
     # Main cognitive loop
@@ -61,8 +83,7 @@ class A7DOMind:
         if isinstance(tags, dict):
             tags = tags.get("tags", [])
 
-        # 2) Determine speaker / owner name
-        # Default until a real profile system exists
+        # 2) Speaker / owner
         owner_name = getattr(self.identity, "creator", None) or "Alex Macleod"
 
         # 3) Entity Promotion Bridge
@@ -73,8 +94,8 @@ class A7DOMind:
             if t not in tags:
                 tags.append(t)
 
-        # 4) Store memory (this is the event)
-        self.memory.add(
+        # 4) Memory (safe call)
+        self._memory_add_safe(
             kind="utterance",
             content=text,
             tags=tags,
@@ -87,7 +108,6 @@ class A7DOMind:
         answer = None
         lowered = text.lower().strip()
 
-        # Entity queries
         if lowered.startswith("who is "):
             name = text[7:].strip(" ?!.")
             desc = self.bridge.describe(name)
@@ -103,24 +123,22 @@ class A7DOMind:
                         f"Is {p.name} a person, a pet, or something else?"
                     )
 
-        # Identity queries
         if answer is None and self.identity.is_identity_question(text):
             answer = self.identity.respond(None)
 
-        # Default response
         if answer is None:
             answer = self.identity.default_response(None)
 
-        # 6) Coherence scoring
-        coherence = self.coherence.evaluate(
-            text=text,
-            tags=tags
-        )
+        # 6) Coherence
+        coherence = self.coherence.evaluate(text=text, tags=tags)
 
-        # 7) Sleep trigger (every 8 memories)
+        # 7) Sleep
         sleep_report = None
         if self._events_since_sleep >= 8:
-            recent = self.memory.recent(n=20)
+            try:
+                recent = self.memory.recent(n=20)
+            except Exception:
+                recent = []
             sleep_report = self.sleep_engine.run_global(recent)
             self.reflections.decay()
             self._events_since_sleep = 0
