@@ -13,7 +13,19 @@ from a7do.sleep import SleepEngine
 from a7do.entity_promotion import EntityPromotionBridge
 
 
+CONFIRM_WORDS = {"yes", "confirm", "correct"}
+CANCEL_WORDS = {"no", "cancel", "stop"}
+
+
 class A7DOMind:
+    """
+    FINAL STABLE COGNITIVE CORE
+    --------------------------
+    - Defensive identity handling
+    - Explicit entity confirmation
+    - Narrative input always allowed
+    """
+
     def __init__(self):
         self.identity = Identity()
         self.memory = Memory()
@@ -30,19 +42,19 @@ class A7DOMind:
 
         self._memory_add_sig = inspect.signature(self.memory.add)
 
-        # Chat confirmation state
+        # Confirmation state
         self._pending_confirmation = None
 
-    # ----------------------------------
+    # -------------------------------------------------
     # Backward compatibility
-    # ----------------------------------
+    # -------------------------------------------------
     @property
     def events(self):
         return self.memory
 
-    # ----------------------------------
+    # -------------------------------------------------
     # Utilities
-    # ----------------------------------
+    # -------------------------------------------------
     def emit(self, kind: str, message: str):
         self._last_signal = {
             "kind": kind,
@@ -60,29 +72,53 @@ class A7DOMind:
         except Exception:
             pass
 
-    # ----------------------------------
-    # Chat confirmation detection
-    # ----------------------------------
+    # -------------------------------------------------
+    # Identity handling (SAFE)
+    # -------------------------------------------------
+    def _identity_question_safe(self, text: str) -> bool:
+        if hasattr(self.identity, "is_identity_question"):
+            try:
+                return bool(self.identity.is_identity_question(text))
+            except Exception:
+                return False
+
+        t = text.lower()
+        return any(p in t for p in ["who are you", "what are you", "your name"])
+
+    def _identity_respond_safe(self):
+        if hasattr(self.identity, "respond"):
+            try:
+                return self.identity.respond(None)
+            except Exception:
+                pass
+        return "I’m A7DO, and I’m learning."
+
+    def _identity_default_safe(self):
+        if hasattr(self.identity, "default_response"):
+            try:
+                return self.identity.default_response(None)
+            except Exception:
+                pass
+        return "I’m learning from what you tell me."
+
+    # -------------------------------------------------
+    # Confirmation intent detection
+    # -------------------------------------------------
     def _detect_confirmation_intent(self, text: str):
         t = text.lower().strip()
 
-        # Explicit patterns only
         if t.startswith("my name is "):
-            name = text[11:].strip()
             return {
-                "name": name,
+                "name": text[11:].strip(),
                 "kind": "person",
                 "is_self": True,
                 "is_creator": True,
             }
 
-        if " is my dog" in t:
-            name = text.split(" is my dog")[0].strip()
+        if t.endswith(" is my dog"):
             return {
-                "name": name,
+                "name": text[:-10].strip(),
                 "kind": "pet",
-                "is_self": False,
-                "is_creator": False,
             }
 
         if " is a nickname for " in t:
@@ -94,22 +130,23 @@ class A7DOMind:
 
         return None
 
-    # ----------------------------------
+    # -------------------------------------------------
     # Coherence (safe)
-    # ----------------------------------
+    # -------------------------------------------------
     def _evaluate_coherence_safe(self, text, tags):
         try:
             return self.coherence.evaluate(text=text, tags=tags)
         except Exception:
             return {"score": 0.5, "label": "neutral"}
 
-    # ----------------------------------
+    # -------------------------------------------------
     # Main cognitive loop
-    # ----------------------------------
+    # -------------------------------------------------
     def process(self, text: str) -> Dict[str, Any]:
         now = time.time()
-        tags = self.tagger.tag(text) or []
+        lowered = text.lower().strip()
 
+        tags = self.tagger.tag(text) or []
         self._memory_add_safe(
             kind="utterance",
             content=text,
@@ -117,9 +154,11 @@ class A7DOMind:
             timestamp=now,
         )
 
-        # --- Handle pending confirmation reply
+        # ---------------------------------------------
+        # Handle confirmation replies ONLY if matched
+        # ---------------------------------------------
         if self._pending_confirmation:
-            if text.lower() in ("yes", "confirm", "correct"):
+            if lowered in CONFIRM_WORDS:
                 p = self._pending_confirmation
                 self.bridge.confirm_entity(
                     name=p["name"],
@@ -132,40 +171,54 @@ class A7DOMind:
                     "answer": f"Confirmed. I now know who **{p['name']}** is.",
                     "tags": tags,
                 }
-            else:
-                self._pending_confirmation = None
 
-        # --- Detect confirmation intent
-        confirm = self._detect_confirmation_intent(text)
-        if confirm:
-            if "alias" in confirm:
-                self.bridge.add_alias(confirm["name"], confirm["alias"])
+            if lowered in CANCEL_WORDS:
+                self._pending_confirmation = None
                 return {
-                    "answer": f"Noted. **{confirm['alias']}** is now an alias for **{confirm['name']}**.",
+                    "answer": "Okay — I won’t record that.",
                     "tags": tags,
                 }
 
-            self._pending_confirmation = confirm
+            # Otherwise: exit confirmation mode and continue normally
+            self._pending_confirmation = None
+
+        # ---------------------------------------------
+        # Detect new confirmation intent
+        # ---------------------------------------------
+        intent = self._detect_confirmation_intent(text)
+        if intent:
+            if "alias" in intent:
+                self.bridge.add_alias(intent["name"], intent["alias"])
+                return {
+                    "answer": f"Noted. **{intent['alias']}** is now an alias for **{intent['name']}**.",
+                    "tags": tags,
+                }
+
+            self._pending_confirmation = intent
             return {
                 "answer": (
-                    f"Just to confirm — should I record **{confirm['name']}** "
-                    f"as a **{confirm['kind']}**?"
+                    f"Just to confirm — should I record **{intent['name']}** "
+                    f"as a **{intent['kind']}**?"
                 ),
                 "tags": tags,
             }
 
-        # --- Identity questions
-        if self.identity.is_identity_question(text):
+        # ---------------------------------------------
+        # Identity questions
+        # ---------------------------------------------
+        if self._identity_question_safe(text):
             return {
-                "answer": self.identity.respond(text),
+                "answer": self._identity_respond_safe(),
                 "tags": tags,
             }
 
-        # --- Default response
+        # ---------------------------------------------
+        # Normal narrative input (ALWAYS allowed)
+        # ---------------------------------------------
         coherence = self._evaluate_coherence_safe(text, tags)
 
         return {
-            "answer": "I’m learning and recording what you tell me.",
+            "answer": "Noted.",
             "tags": tags,
             "coherence": coherence,
             "signal": self._last_signal,
