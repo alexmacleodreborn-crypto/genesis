@@ -4,13 +4,11 @@ from typing import Dict, Any
 from a7do.identity import Identity
 from a7do.memory import Memory
 from a7do.tagger import Tagger
-from a7do.profile import ProfileManager
 from a7do.coherence import CoherenceScorer
 from a7do.background_density import BackgroundDensity
 
 from a7do.reflection import ReflectionStore
 from a7do.sleep import SleepEngine
-
 from a7do.entity_promotion import EntityPromotionBridge
 
 
@@ -18,28 +16,33 @@ class A7DOMind:
     """
     Central cognitive orchestrator for A7DO.
 
-    Uses:
-    - Memory as the event stream
-    - Entity Promotion Bridge for grounded identity
-    - Sleep + Reflection for consolidation
+    Design notes:
+    - Memory IS the event stream
+    - Profile system is optional / future
+    - Entity promotion is gated + explicit
+    - Sleep & reflection are safe and per-entity
     """
 
     def __init__(self):
         self.identity = Identity()
         self.memory = Memory()
         self.tagger = Tagger()
-        self.profiles = ProfileManager()
         self.coherence = CoherenceScorer()
         self.background = BackgroundDensity()
 
+        # Reflection + sleep
         self.reflections = ReflectionStore()
         self.sleep_engine = SleepEngine(self.reflections)
+        self._events_since_sleep = 0
 
+        # Entity promotion bridge
         self.bridge = EntityPromotionBridge()
 
-        self._events_since_sleep = 0
         self._last_signal = None
 
+    # -----------------------------
+    # Internal signal helper
+    # -----------------------------
     def emit(self, kind: str, message: str):
         self._last_signal = {
             "kind": kind,
@@ -47,6 +50,9 @@ class A7DOMind:
             "time": time.time()
         }
 
+    # -----------------------------
+    # Main cognitive loop
+    # -----------------------------
     def process(self, text: str) -> Dict[str, Any]:
         now = time.time()
 
@@ -55,11 +61,9 @@ class A7DOMind:
         if isinstance(tags, dict):
             tags = tags.get("tags", [])
 
-        # 2) Profile learning
-        profile = self.profiles.current()
-        profile.learn(text, tags)
-
-        owner_name = getattr(profile, "name", "") or "Alex Macleod"
+        # 2) Determine speaker / owner name
+        # Default until a real profile system exists
+        owner_name = getattr(self.identity, "creator", None) or "Alex Macleod"
 
         # 3) Entity Promotion Bridge
         bridge_tags, bridge_events, bridge_questions = self.bridge.observe(
@@ -69,7 +73,7 @@ class A7DOMind:
             if t not in tags:
                 tags.append(t)
 
-        # 4) Store as memory (this IS the event)
+        # 4) Store memory (this is the event)
         self.memory.add(
             kind="utterance",
             content=text,
@@ -79,10 +83,11 @@ class A7DOMind:
 
         self._events_since_sleep += 1
 
-        # 5) Entity question handling
+        # 5) Answer resolution
         answer = None
         lowered = text.lower().strip()
 
+        # Entity queries
         if lowered.startswith("who is "):
             name = text[7:].strip(" ?!.")
             desc = self.bridge.describe(name)
@@ -98,31 +103,30 @@ class A7DOMind:
                         f"Is {p.name} a person, a pet, or something else?"
                     )
 
-        # 6) Identity questions
+        # Identity queries
         if answer is None and self.identity.is_identity_question(text):
-            answer = self.identity.respond(profile)
+            answer = self.identity.respond(None)
 
-        # 7) Default response
+        # Default response
         if answer is None:
-            answer = self.identity.default_response(profile)
+            answer = self.identity.default_response(None)
 
-        # 8) Coherence scoring
+        # 6) Coherence scoring
         coherence = self.coherence.evaluate(
             text=text,
             tags=tags
         )
 
-        # 9) Sleep trigger (every 8 memories)
+        # 7) Sleep trigger (every 8 memories)
         sleep_report = None
         if self._events_since_sleep >= 8:
             recent = self.memory.recent(n=20)
-            created = self.sleep_engine.run_global(recent)
+            sleep_report = self.sleep_engine.run_global(recent)
             self.reflections.decay()
             self._events_since_sleep = 0
             self.emit("SLEEP", "Memory consolidation complete")
-            sleep_report = created
 
-        # 10) Inspector payload
+        # 8) Inspector payload
         pending_entities = [
             {
                 "name": p.name,
