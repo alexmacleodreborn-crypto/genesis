@@ -6,132 +6,119 @@ from a7do.mind import A7DOMind
 # -------------------------------------------------
 st.set_page_config(
     page_title="A7DO Cognitive Interface",
-    layout="centered",
+    page_icon="🧠",
+    layout="wide",
 )
 
-st.title("🧠 A7DO Cognitive Interface")
-st.caption("Grounded cognition · Explicit learning · Inspectable memory")
-
 # -------------------------------------------------
-# Session state
+# Persistent Mind (shared across pages)
 # -------------------------------------------------
 if "mind" not in st.session_state:
     st.session_state.mind = A7DOMind()
 
-if "history" not in st.session_state:
-    st.session_state.history = []
-
 mind: A7DOMind = st.session_state.mind
 
 # -------------------------------------------------
-# Identity panel (safe)
+# Sidebar — Identity & Navigation
 # -------------------------------------------------
-with st.expander("🧬 Identity", expanded=True):
-    identity = mind.identity
-    st.markdown(
-        f"""
-**Name:** {getattr(identity, "name", "A7DO")}  
-**Creator:** {getattr(identity, "creator", "Unknown")}  
-**Type:** {getattr(identity, "being_type", "Cognitive System")}
+st.sidebar.title("🧠 A7DO")
+
+identity = mind.identity
+
+st.sidebar.markdown("### Identity")
+st.sidebar.markdown(f"**Name:** {getattr(identity, 'creator', '—') or '—'}")
+st.sidebar.markdown("**Type:** Artificial Cognitive System")
+
+st.sidebar.divider()
+
+st.sidebar.markdown("### Navigation")
+st.sidebar.markdown(
+    """
+- 💬 **Chat** (this page)  
+- 🕸️ **Mind Graph** → use left menu  
 """
-    )
-
-# -------------------------------------------------
-# Chat input
-# -------------------------------------------------
-st.subheader("💬 Speak to A7DO")
-
-user_text = st.text_input(
-    "Enter a message",
-    placeholder="Try: 'My name is Alex Macleod' or 'Xena is my dog'",
 )
 
+st.sidebar.divider()
+
+# -------------------------------------------------
+# Main Chat Interface
+# -------------------------------------------------
+st.title("💬 A7DO — Cognitive Dialogue")
+
+st.caption(
+    "This interface lets you speak naturally while A7DO builds entities, "
+    "relationships, and shared experiences in real time."
+)
+
+# -------------------------------------------------
+# Chat history (simple, safe)
+# -------------------------------------------------
+if "chat_log" not in st.session_state:
+    st.session_state.chat_log = []
+
+for role, msg in st.session_state.chat_log:
+    with st.chat_message(role):
+        st.markdown(msg)
+
+# -------------------------------------------------
+# User input
+# -------------------------------------------------
+user_text = st.chat_input("Say something…")
+
 if user_text:
+    # Show user message
+    st.session_state.chat_log.append(("user", user_text))
+    with st.chat_message("user"):
+        st.markdown(user_text)
+
+    # Process through the mind
     result = mind.process(user_text)
-    st.session_state.history.append(
-        {
-            "user": user_text,
-            "result": result,
-        }
-    )
+
+    answer = result.get("answer", "…")
+
+    # Show A7DO response
+    st.session_state.chat_log.append(("assistant", answer))
+    with st.chat_message("assistant"):
+        st.markdown(answer)
 
 # -------------------------------------------------
-# Conversation display
+# Debug / Introspection Panel
 # -------------------------------------------------
-if st.session_state.history:
-    st.subheader("🗨️ Conversation")
+with st.expander("🔍 Mind Inspector", expanded=False):
 
-    for turn in st.session_state.history[::-1]:
-        st.markdown(f"**You:** {turn['user']}")
+    col1, col2, col3 = st.columns(3)
 
-        answer = turn["result"].get("answer", "—")
-        st.markdown(f"**A7DO:** {answer}")
+    with col1:
+        st.markdown("#### Entities")
+        if mind.bridge.entities:
+            for e in mind.bridge.entities.values():
+                st.markdown(
+                    f"- **{e.name}** ({e.kind})"
+                    + (f" — owner: {e.owner_name}" if e.owner_name else "")
+                )
+        else:
+            st.markdown("_No entities yet_")
 
-        tags = turn["result"].get("tags")
-        if tags:
-            st.caption(f"Tags: {', '.join(tags)}")
+    with col2:
+        st.markdown("#### Events")
+        if mind.events_graph.events:
+            for ev in mind.events_graph.events.values():
+                names = [
+                    mind.bridge.entities[p].name
+                    for p in ev.participants
+                    if p in mind.bridge.entities
+                ]
+                st.markdown(
+                    f"- **{ev.place or 'Event'}** → {', '.join(names)}"
+                )
+        else:
+            st.markdown("_No shared events yet_")
 
-        coherence = turn["result"].get("coherence")
-        if isinstance(coherence, dict):
-            score = coherence.get("score")
-            if score is not None:
-                st.caption(f"Coherence score: {score}")
-
-        st.divider()
-
-# -------------------------------------------------
-# Background density (debug / insight)
-# -------------------------------------------------
-with st.expander("🌫️ Background Density"):
-    bg = mind.background
-    summary = {}
-
-    for attr in ("queue_len", "working_len", "last_queue_item_tags"):
-        if hasattr(bg, attr):
-            summary[attr] = getattr(bg, attr)
-
-    if summary:
-        st.json(summary)
-    else:
-        st.caption("No background activity yet.")
-
-# -------------------------------------------------
-# Pending entities (read-only here)
-# -------------------------------------------------
-with st.expander("🧩 Pending Entities"):
-    pending = mind.bridge.pending
-    if not pending:
-        st.caption("No pending entities.")
-    else:
-        for p in pending.values():
-            st.write(
-                f"• **{p.name}** "
-                f"(confidence={p.confidence:.2f}, seen={p.count})"
-            )
-
-# -------------------------------------------------
-# Entity graph (read-only here)
-# -------------------------------------------------
-with st.expander("🗂️ Entity Graph"):
-    entities = mind.bridge.entities
-    if not entities:
-        st.caption("No promoted entities yet.")
-    else:
-        for e in entities.values():
-            st.markdown(
-                f"""
-**{e.name}**  
-Type: `{e.kind}`  
-Aliases: {", ".join(e.aliases) if e.aliases else "—"}
-"""
-            )
-
-# -------------------------------------------------
-# System signal
-# -------------------------------------------------
-with st.expander("📡 System Signal"):
-    signal = getattr(mind, "_last_signal", None)
-    if signal:
-        st.json(signal)
-    else:
-        st.caption("No system signals emitted yet.")
+    with col3:
+        st.markdown("#### Coherence")
+        try:
+            coh = mind.coherence.evaluate(text="", tags=[])
+            st.metric("Score", coh.get("score", "—"))
+        except Exception:
+            st.metric("Score", "—")
