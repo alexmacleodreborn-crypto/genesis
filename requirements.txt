@@ -3,3 +3,5 @@ pandas
 altair
 streamlit-autorefresh
 matplotlib
+networkx
+pyvis
