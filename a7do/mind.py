@@ -17,34 +17,53 @@ class A7DOMind:
     """
     Central cognitive orchestrator for A7DO.
 
-    Fully defensive:
-    - No assumptions about Identity helper methods
-    - No assumptions about Memory.add signature
-    - Coherence scorer is optional / adaptive
+    FINAL FOUNDATION VERSION
+    ------------------------
+    - Memory is the event stream
+    - `events` is a backward-compatible alias
     - Entity promotion is gated and explicit
+    - Coherence is optional and non-blocking
+    - Sleep & reflection are safe and deferred
     """
 
     def __init__(self):
+        # Core cognition
         self.identity = Identity()
         self.memory = Memory()
         self.tagger = Tagger()
         self.coherence = CoherenceScorer()
         self.background = BackgroundDensity()
 
+        # Reflection + sleep
         self.reflections = ReflectionStore()
         self.sleep_engine = SleepEngine(self.reflections)
         self._events_since_sleep = 0
 
+        # Entity grounding
         self.bridge = EntityPromotionBridge()
 
+        # System signal
         self._last_signal = None
 
-        # Inspect memory.add once so we can call it safely
+        # Inspect memory.add once for safe calls
         self._memory_add_sig = inspect.signature(self.memory.add)
 
-    # -----------------------------
+    # -------------------------------------------------
+    # Backward compatibility (IMPORTANT)
+    # -------------------------------------------------
+    @property
+    def events(self):
+        """
+        Backward-compatibility alias.
+
+        Older inspectors expect `mind.events`.
+        Conceptually correct: events ARE memory.
+        """
+        return self.memory
+
+    # -------------------------------------------------
     # Internal helpers
-    # -----------------------------
+    # -------------------------------------------------
     def emit(self, kind: str, message: str):
         self._last_signal = {
             "kind": kind,
@@ -55,8 +74,7 @@ class A7DOMind:
     def _memory_add_safe(self, **kwargs):
         """
         Call memory.add with only supported parameters.
-        Falls back to positional add(kind, content).
-        Never crashes cognition for storage.
+        Never crash cognition for storage mismatches.
         """
         supported = {}
         for name in self._memory_add_sig.parameters:
@@ -67,14 +85,14 @@ class A7DOMind:
             self.memory.add(**supported)
         except TypeError:
             try:
+                # Fallback: positional (kind, content)
                 self.memory.add(kwargs.get("kind"), kwargs.get("content"))
             except Exception:
                 pass
 
     def _identity_handles_question(self, text: str) -> bool:
         """
-        If Identity implements is_identity_question(), use it.
-        Otherwise, we do a tiny heuristic fallback.
+        Use Identity helper if present, otherwise light heuristic.
         """
         if hasattr(self.identity, "is_identity_question") and callable(self.identity.is_identity_question):
             try:
@@ -82,7 +100,6 @@ class A7DOMind:
             except Exception:
                 return False
 
-        # Heuristic fallback (very light)
         t = text.lower().strip()
         return any(
             phrase in t
@@ -96,9 +113,6 @@ class A7DOMind:
         )
 
     def _identity_respond_safe(self):
-        """
-        If Identity implements respond(profile), use it; otherwise fall back.
-        """
         if hasattr(self.identity, "respond") and callable(self.identity.respond):
             try:
                 return self.identity.respond(None)
@@ -107,10 +121,6 @@ class A7DOMind:
         return None
 
     def _identity_default_safe(self):
-        """
-        If Identity implements default_response(profile), use it.
-        Otherwise return a neutral sentence.
-        """
         if hasattr(self.identity, "default_response") and callable(self.identity.default_response):
             try:
                 return self.identity.default_response(None)
@@ -120,12 +130,11 @@ class A7DOMind:
 
     def _evaluate_coherence_safe(self, text: str, tags: List[str]) -> Dict[str, Any]:
         """
-        Safely evaluate coherence if the scorer supports it.
-        Tries several method names, otherwise returns a neutral coherence object.
+        Coherence is optional meta-cognition.
+        Never blocks reasoning.
         """
         scorer = self.coherence
 
-        # Case 1: expected evaluate(text=, tags=)
         if hasattr(scorer, "evaluate") and callable(getattr(scorer, "evaluate")):
             try:
                 out = scorer.evaluate(text=text, tags=tags)
@@ -133,7 +142,6 @@ class A7DOMind:
             except Exception:
                 pass
 
-        # Case 2: alternate method names
         for name in ("score", "assess", "compute"):
             if hasattr(scorer, name) and callable(getattr(scorer, name)):
                 try:
@@ -142,16 +150,15 @@ class A7DOMind:
                 except Exception:
                     pass
 
-        # Fallback: neutral coherence
         return {
             "score": 0.5,
             "label": "neutral",
-            "note": "coherence module inactive or method not found",
+            "note": "coherence module inactive or undefined",
         }
 
-    # -----------------------------
+    # -------------------------------------------------
     # Main cognitive loop
-    # -----------------------------
+    # -------------------------------------------------
     def process(self, text: str) -> Dict[str, Any]:
         now = time.time()
 
@@ -162,21 +169,23 @@ class A7DOMind:
         if not isinstance(tags, list):
             tags = list(tags)
 
-        # 2) Speaker / owner name (default)
+        # 2) Default speaker / owner
         owner_name = getattr(self.identity, "creator", None) or "Alex Macleod"
 
-        # 3) Entity Promotion Bridge (linguistic → entity binding)
-        bridge_tags, bridge_events, bridge_questions = self.bridge.observe(text, owner_name=owner_name)
+        # 3) Entity Promotion Bridge
+        bridge_tags, bridge_events, bridge_questions = self.bridge.observe(
+            text, owner_name=owner_name
+        )
         for t in bridge_tags:
             if t not in tags:
                 tags.append(t)
 
-        # 4) Store memory (safe)
+        # 4) Store memory (event)
         self._memory_add_safe(
             kind="utterance",
             content=text,
             tags=tags,
-            timestamp=now
+            timestamp=now,
         )
 
         self._events_since_sleep += 1
@@ -185,7 +194,6 @@ class A7DOMind:
         answer = None
         lowered = text.lower().strip()
 
-        # Entity query support
         if lowered.startswith("who is "):
             name = text[7:].strip(" ?!.")
             desc = self.bridge.describe(name)
@@ -201,18 +209,16 @@ class A7DOMind:
                         f"Is {p.name} a person, a pet, or something else?"
                     )
 
-        # Identity questions
         if answer is None and self._identity_handles_question(text):
             answer = self._identity_respond_safe()
 
-        # Default response
         if answer is None:
             answer = self._identity_default_safe()
 
         # 6) Coherence (safe)
         coherence = self._evaluate_coherence_safe(text=text, tags=tags)
 
-        # 7) Sleep trigger (every 8 inputs)
+        # 7) Sleep trigger (every 8 events)
         sleep_report = None
         if self._events_since_sleep >= 8:
             try:
@@ -220,7 +226,6 @@ class A7DOMind:
             except Exception:
                 recent = []
 
-            # Your SleepEngine may expose run_global() or run(); adapt safely
             if hasattr(self.sleep_engine, "run_global") and callable(getattr(self.sleep_engine, "run_global")):
                 try:
                     sleep_report = self.sleep_engine.run_global(recent)
@@ -232,7 +237,6 @@ class A7DOMind:
                 except Exception:
                     sleep_report = None
 
-            # decay reflection versions if available
             try:
                 self.reflections.decay()
             except Exception:
