@@ -10,44 +10,50 @@ if "mind" not in st.session_state:
 mind = st.session_state.mind
 
 # ------------------------------
-# Memory Stream
+# Memory
 # ------------------------------
 st.subheader("📜 Event / Memory Stream")
-events = mind.events.recent(20) if hasattr(mind.events, "recent") else []
 
-for i, e in enumerate(events[::-1], 1):
-    with st.expander(f"Event {i}"):
-        st.json(e if isinstance(e, dict) else {"event": str(e)})
+frames = mind.events.recent(20) if hasattr(mind.events, "recent") else []
+if not frames:
+    st.caption("No events yet.")
+else:
+    for i, f in enumerate(frames[::-1], 1):
+        with st.expander(f"Event {i}"):
+            st.json(f if isinstance(f, dict) else {"event": str(f)})
 
 # ------------------------------
 # Pending Entities
 # ------------------------------
 st.subheader("🧩 Pending Entities")
 
-pending = mind.bridge.pending
+PRONOUNS = {"i", "me", "my", "mine", "you", "your"}
 
-if not pending:
+if not mind.bridge.pending:
     st.caption("No pending entities.")
 else:
-    for name, p in pending.items():
+    for key, p in list(mind.bridge.pending.items()):
         with st.expander(f"{p.name} (confidence {p.confidence:.2f})"):
+            if p.name.lower() in PRONOUNS:
+                st.info("This is a pronoun — it will be handled as language, not an entity.")
+                if st.button("Record as language rule", key=f"lang_{key}"):
+                    del mind.bridge.pending[key]
+                    st.rerun()
+                continue
+
             kind = st.selectbox(
                 "Confirm as",
-                ["person", "pet", "place", "concept"],
-                key=f"kind_{name}",
+                ["person", "pet", "place", "object", "concept"],
+                key=f"kind_{key}",
             )
 
-            is_self = st.checkbox("This is me", key=f"self_{name}")
-            is_creator = st.checkbox("This is my creator", key=f"creator_{name}")
-
-            if st.button("Confirm", key=f"confirm_{name}"):
+            if st.button("Confirm entity", key=f"confirm_{key}"):
                 mind.bridge.confirm_entity(
                     name=p.name,
                     kind=kind,
-                    is_self=is_self,
-                    is_creator=is_creator,
+                    owner_name=getattr(mind.identity, "creator", None),
                 )
-                st.experimental_rerun()
+                st.rerun()
 
 # ------------------------------
 # Entity Graph
@@ -65,12 +71,3 @@ Type: `{e.kind}`
 Aliases: {", ".join(e.aliases) if e.aliases else "—"}
 """
         )
-
-# ------------------------------
-# System Signal
-# ------------------------------
-st.subheader("📡 System Signal")
-if mind._last_signal:
-    st.json(mind._last_signal)
-else:
-    st.caption("No system signals.")
