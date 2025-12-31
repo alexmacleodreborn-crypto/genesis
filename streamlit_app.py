@@ -1,97 +1,144 @@
 import streamlit as st
-import matplotlib.pyplot as plt
+import time
 
-from a7do.identity import Identity
-from a7do.emotional_state import EmotionalState
-from a7do.memory import Memory
-from a7do.development import Development
-from a7do.multi_agent import MultiAgent
-from a7do.childhood import Childhood
 from a7do.mind import A7DOMind
 
-st.set_page_config(page_title="A7DO Flow Mind", layout="wide")
-st.title("🧠 A7DO — Flow Learning & Mind-Pathing")
+# ----------------------------------------
+# Page configuration
+# ----------------------------------------
+
+st.set_page_config(
+    page_title="A7DO Cognitive Engine",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+st.title("🧠 A7DO – Flow Cognitive Engine")
+st.caption("Event-based learning • Reflection • Sleep • Coherence")
+
+# ----------------------------------------
+# Session state initialisation
+# ----------------------------------------
 
 if "mind" not in st.session_state:
-    st.session_state.mind = A7DOMind(
-        identity=Identity(),
-        emotion=EmotionalState(),
-        memory=Memory(),
-        development=Development(),
-        multi_agent=MultiAgent(),
-        childhood=Childhood()
-    )
-    st.session_state.last = None
+    st.session_state.mind = A7DOMind()
 
-mind = st.session_state.mind
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+if "last_result" not in st.session_state:
+    st.session_state.last_result = None
+
+
+mind: A7DOMind = st.session_state.mind
+
+# ----------------------------------------
+# Sidebar – Mind State
+# ----------------------------------------
 
 with st.sidebar:
-    st.header("⚙️ Flow Controls")
-    st.caption("Temporal binding window is set in EventMemory(bind_window_s).")
+    st.header("🧩 Mind State")
 
-text = st.text_input("Speak to A7DO")
+    # Identity panel
+    st.subheader("Identity")
+    st.markdown(mind.identity.panel())
 
-if text:
-    st.session_state.last = mind.process(text)
+    st.divider()
 
-r = st.session_state.last
-if not r:
-    st.info("Say something like: “My dog is called Xena. We are at the park. I feel excited. Xena is tied at the gate.”")
-    st.stop()
+    # Coherence
+    if st.session_state.last_result:
+        coh = st.session_state.last_result.get("coherence", {})
+        st.metric(
+            "Coherence Score",
+            coh.get("score", "—")
+        )
+        st.caption(coh.get("label", ""))
 
-st.subheader("💬 Response")
-st.write(r["answer"])
+    st.divider()
 
-st.subheader("🧠 Cognitive Activity")
-for e in r["events"]:
-    st.code(e)
+    # Sleep / thinking signal
+    if st.session_state.last_result:
+        signal = st.session_state.last_result.get("signal")
+        if signal:
+            if signal["kind"] == "SLEEP":
+                st.info(f"🛌 {signal['message']}")
+            else:
+                st.caption(f"{signal['kind']}: {signal['message']}")
 
-st.subheader("🧭 Mind Path")
-st.write(" → ".join(r["path"]))
+    st.divider()
 
-col1, col2 = st.columns(2)
+    # Reflections (awareness)
+    st.subheader("🪞 Reflections")
 
-with col1:
-    st.subheader("🧷 Current Event Frame")
-    st.json(r.get("event"))
+    if st.session_state.last_result:
+        reflections = st.session_state.last_result.get("reflections", {})
+        if not reflections:
+            st.caption("No active reflections yet.")
+        else:
+            for entity_id, refls in reflections.items():
+                if not refls:
+                    continue
+                st.markdown(f"**Entity:** `{entity_id}`")
+                for r in refls:
+                    st.write(
+                        f"- {r['pattern']} "
+                        f"(score={r['score']}, band={r['band']})"
+                    )
 
+    st.divider()
+
+    # Recent memory (raw)
     st.subheader("📚 Recent Events")
-    st.json(r.get("recent_events"))
+    for h in st.session_state.history[-5:][::-1]:
+        st.caption(f"[{h['event_id']}] {h['text']}")
 
-with col2:
-    st.subheader("📈 Flow Stats")
-    st.json(r.get("event_stats"))
+# ----------------------------------------
+# Main interaction area
+# ----------------------------------------
 
-    st.subheader("🔁 Reoccurrence")
-    st.json(r.get("reoccurrence"))
+st.subheader("💬 Interaction")
 
-st.subheader("🧩 Entity Graph")
-st.json(r.get("entities"))
+user_text = st.text_input(
+    "Say something to A7DO",
+    placeholder="Hello…",
+    key="input_text"
+)
 
-st.subheader("🏷 Unbound Labels")
-st.json(r.get("unbound_labels"))
+send = st.button("Send")
 
-st.subheader("✅ Entity Facts")
-st.json(r.get("facts"))
+# ----------------------------------------
+# Process input
+# ----------------------------------------
 
-# Simple chart: modalities / emotions / environments in current event
-evt = r.get("event") or {}
-modalities = evt.get("modalities", {})
-emotions = evt.get("emotions", {})
-env = evt.get("environments", {})
+if send and user_text.strip():
+    with st.spinner("A7DO is processing…"):
+        result = mind.process(user_text)
 
-def bar_chart(title, data):
-    if not data:
-        st.caption(f"{title}: none detected.")
-        return
-    labels = list(data.keys())
-    vals = list(data.values())
-    fig, ax = plt.subplots()
-    ax.bar(labels, vals)
-    ax.set_title(title)
-    st.pyplot(fig)
+    # Save history
+    st.session_state.history.append({
+        "text": user_text,
+        "event_id": result["event_id"]
+    })
 
-st.subheader("🎛 Event Signals")
-bar_chart("Modalities", modalities)
-bar_chart("Emotions", emotions)
-bar_chart("Environments", env)
+    st.session_state.last_result = result
+
+    # Small pause for cognitive feel
+    time.sleep(0.2)
+
+# ----------------------------------------
+# Display response
+# ----------------------------------------
+
+if st.session_state.last_result:
+    st.subheader("🗣️ A7DO Response")
+    st.markdown(st.session_state.last_result["answer"])
+
+# ----------------------------------------
+# Inspector / Debug View
+# ----------------------------------------
+
+with st.expander("🔍 Mind Inspector", expanded=False):
+    if st.session_state.last_result:
+        st.json(st.session_state.last_result)
+    else:
+        st.caption("No activity yet.")
