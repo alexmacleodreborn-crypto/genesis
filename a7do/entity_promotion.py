@@ -8,9 +8,9 @@ from typing import Dict, Optional
 class Entity:
     entity_id: str
     name: str
-    kind: str                  # person | pet | object
+    kind: str                  # person | pet | object | agent
     owner_name: Optional[str] = None
-    confidence: float = 1.0    # 0.0 – 1.0
+    confidence: float = 1.0
     origin: str = "declarative"
     created_at: float = field(default_factory=lambda: time.time())
 
@@ -23,8 +23,7 @@ class EntityPromotionBridge:
         name = name.strip().lower()
         for ent in self.entities.values():
             if ent.name.lower() == name:
-                if owner_name is None or ent.owner_name == owner_name:
-                    return ent
+                return ent
         return None
 
     def confirm_entity(
@@ -36,18 +35,11 @@ class EntityPromotionBridge:
         confidence: float = 1.0,
         origin: str = "declarative",
     ) -> Entity:
-        """
-        Promote or confirm an entity.
-
-        - Safe to call multiple times
-        - Upgrades confidence if higher
-        """
 
         name = name.strip()
 
-        existing = self.find_entity(name, owner_name)
+        existing = self.find_entity(name)
         if existing:
-            # Upgrade confidence if stronger
             if confidence > existing.confidence:
                 existing.confidence = confidence
                 existing.origin = origin
