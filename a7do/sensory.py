@@ -1,13 +1,13 @@
 import re
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List
 
 
 @dataclass
 class SensoryExtraction:
-    smells: List[str]          # normalised labels like "grass_smell"
+    smells: List[str]          # normalised labels like "smoke_smell"
     sounds: List[str]          # normalised labels like "birds_sound"
-    raw: List[str]             # raw phrases like "smelled like grass"
+    raw: List[str]             # raw phrases like "smell smoke"
 
 
 def _norm(label: str, suffix: str) -> str:
@@ -21,49 +21,56 @@ def _norm(label: str, suffix: str) -> str:
 
 class SensoryParser:
     """
-    C rule:
-      - store RAW phrase (verbatim-ish)
-      - store NORMALISED label (tokenised) with suffix _smell / _sound
+    Refined sensory grounding.
+    Smell and sound now behave symmetrically.
 
-    We keep parsing intentionally simple (developmental stage):
-      smell patterns: "smell like X", "smelled like X", "smells like X"
-      sound patterns: "hear X", "heard X", "could hear X", "sound of X", "noise of X"
+    Stores:
+      - RAW phrases
+      - NORMALISED tokens with suffix _smell / _sound
     """
 
+    # Smell patterns
     RE_SMELL_LIKE = re.compile(r"\b(smell(?:ed|s)?\s+like)\s+([a-zA-Z0-9\s\-]+)", re.I)
+    RE_SMELL_SIMPLE = re.compile(r"\b(smell|smells|smelled|can\s+smell|i\s+smell)\s+([a-zA-Z0-9\s\-]+)", re.I)
+
+    # Sound patterns
     RE_SOUND_HEAR = re.compile(r"\b(hear|heard|could\s+hear)\s+([a-zA-Z0-9\s\-]+)", re.I)
     RE_SOUND_OF = re.compile(r"\b(sound|noise)\s+of\s+([a-zA-Z0-9\s\-]+)", re.I)
 
     def extract(self, text: str) -> SensoryExtraction:
         text = text or ""
-        smells_n = []
-        sounds_n = []
-        raw = []
+        smells_n, sounds_n, raw = [], [], []
 
-        # Smells
+        # --- Smells (like)
         for m in self.RE_SMELL_LIKE.finditer(text):
-            phrase = m.group(1)
-            thing = (m.group(2) or "").strip()
+            phrase, thing = m.group(1), (m.group(2) or "").strip()
             if thing:
                 raw.append(f"{phrase} {thing}".strip())
                 n = _norm(thing, "smell")
                 if n:
                     smells_n.append(n)
 
-        # Sounds: hear/heard
+        # --- Smells (simple)
+        for m in self.RE_SMELL_SIMPLE.finditer(text):
+            phrase, thing = m.group(1), (m.group(2) or "").strip()
+            if thing:
+                raw.append(f"{phrase} {thing}".strip())
+                n = _norm(thing, "smell")
+                if n:
+                    smells_n.append(n)
+
+        # --- Sounds (hear/heard)
         for m in self.RE_SOUND_HEAR.finditer(text):
-            phrase = m.group(1)
-            thing = (m.group(2) or "").strip()
+            phrase, thing = m.group(1), (m.group(2) or "").strip()
             if thing:
                 raw.append(f"{phrase} {thing}".strip())
                 n = _norm(thing, "sound")
                 if n:
                     sounds_n.append(n)
 
-        # Sounds: sound/noise of X
+        # --- Sounds (sound/noise of X)
         for m in self.RE_SOUND_OF.finditer(text):
-            phrase = m.group(1)
-            thing = (m.group(2) or "").strip()
+            phrase, thing = m.group(1), (m.group(2) or "").strip()
             if thing:
                 raw.append(f"{phrase} of {thing}".strip())
                 n = _norm(thing, "sound")
