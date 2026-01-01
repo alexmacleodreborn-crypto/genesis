@@ -5,7 +5,7 @@ from a7do.sleep import SleepEngine
 
 class A7DOMind:
     """
-    Infant cognition.
+    Infant cognition — situated learning only.
     """
 
     def __init__(self, schedule):
@@ -18,10 +18,10 @@ class A7DOMind:
     def wake(self):
         self.last = "wake"
 
-    def process_event(self, text):
-        self.experiences.add(text)
-        self.lexicon.learn(text)
-        self.last = f"experienced: {text}"
+    def process_event(self, event):
+        self.experiences.add(event)
+        self.lexicon.learn_from_event(event)
+        self.last = f"experienced in {event.place}"
 
     def sleep(self):
         self.last = "sleep"
