@@ -1,7 +1,7 @@
 import time
 import re
 import inspect
-from typing import Dict, Any, Optional, Set, Tuple
+from typing import Dict, Any, Optional, Set
 
 from a7do.identity import Identity
 from a7do.memory import Memory
@@ -14,14 +14,10 @@ from a7do.relationships import RelationshipStore
 from a7do.pending_relationships import PendingRelationshipStore
 
 from a7do.objects import ObjectManager
+from a7do.sensory import SensoryParser
 
 
 PLACE_WORDS = {"park", "home", "garden", "vet", "beach", "gate", "street"}
-
-BASIC_COLORS = {
-    "red", "blue", "green", "yellow", "orange", "purple", "pink",
-    "black", "white", "brown", "grey", "gray"
-}
 
 
 class A7DOMind:
@@ -61,10 +57,12 @@ class A7DOMind:
         self.relationships = RelationshipStore()
         self.pending_relationships = PendingRelationshipStore()
 
-        # Objects
         self.objects = ObjectManager()
 
-        # Confirmation state (generic)
+        # NEW: sensory parser
+        self.sensory = SensoryParser()
+
+        # Confirmation state:
         # {"type": "rel"|"obj", "id": <pending_id>, "stage": "..."}
         self.awaiting: Optional[Dict[str, str]] = None
 
@@ -213,9 +211,6 @@ class A7DOMind:
 
         return None
 
-    # -----------------------------
-    # Main loop
-    # -----------------------------
     def process(self, text: str) -> Dict[str, Any]:
         now = time.time()
         text = text or ""
@@ -248,9 +243,7 @@ class A7DOMind:
         if self.RE_WHOAMI.match(text):
             return {"answer": f"You are **{speaker}**.", "tags": tags}
 
-        # -----------------------------
-        # Explicit pet learning
-        # -----------------------------
+        # Pets
         m = self.RE_MY_DOG_CALLED.match(text)
         if m:
             pet_name = m.group("name").strip().strip(" .!?")
@@ -280,9 +273,7 @@ class A7DOMind:
             ent = self.bridge.confirm_entity(name=pet_name, kind="pet", owner_name=None)
             return {"answer": f"Noted. **{ent.name}** is a dog.", "tags": tags}
 
-        # -----------------------------
         # Relationships (simple)
-        # -----------------------------
         m = self.RE_X_IS_MY_REL.match(text)
         if m:
             other = m.group("name").strip().strip(" .!?")
@@ -295,19 +286,14 @@ class A7DOMind:
                 self.relationships.add(subject_id=sp.entity_id, object_id=ob.entity_id, rel_type=rel, note=f"{other} is my {rel}")
                 return {"answer": f"Noted. **{other}** is your **{rel}**.", "tags": tags}
 
-        # -----------------------------
         # OBJECTS (Option B)
-        # -----------------------------
-        # 1) Possessive: "Xena's ball"
         mo = self.RE_POSSESSIVE_OBJECT.match(text)
         if mo:
             owner = mo.group("owner").strip()
             label = mo.group("label").lower().strip()
 
-            # owner could be person or pet — ensure entity exists (Stage safe: if known pet name exists, it will already be pet)
             owner_ent = self.bridge.find_entity(owner, owner_name=None)
             if not owner_ent:
-                # default to person if not known; user can later correct via "Xena is a dog"
                 self._ensure_person(owner)
                 owner_ent = self.bridge.find_entity(owner, owner_name=None)
 
@@ -324,7 +310,6 @@ class A7DOMind:
                 self.relationships.add(subject_id=owner_ent.entity_id, object_id=ent_id, rel_type="owns", note="possessive object")
             return {"answer": f"Noted. **{owner}** has a **{label}**.", "tags": tags}
 
-        # 2) "my ball"
         mo = self.RE_MY_OBJECT.match(text)
         if mo:
             label = mo.group("label").lower().strip()
@@ -343,13 +328,11 @@ class A7DOMind:
                 self.relationships.add(subject_id=spid, object_id=ent_id, rel_type="owns", note="my object")
             return {"answer": f"Noted. You have a **{label}**.", "tags": tags}
 
-        # 3) "red ball" (learn/attach color; if conflict, disambiguate)
         mo = self.RE_COLORED_OBJECT.match(text)
         if mo:
             color = mo.group("color").lower().strip()
             label = mo.group("label").lower().strip()
 
-            # learn color on demand (as you requested: colour learning)
             if color:
                 self.objects.colors.learn(color)
 
@@ -366,7 +349,6 @@ class A7DOMind:
 
             return {"answer": f"Noted. **{color} {label}**.", "tags": tags}
 
-        # 4) "a ball" / "the ball"
         mo = self.RE_A_OBJECT.match(text)
         if mo:
             label = mo.group("label").lower().strip()
@@ -380,35 +362,45 @@ class A7DOMind:
                 return {"answer": pending.prompt, "tags": tags}
             return {"answer": f"Noted. **{label}**.", "tags": tags}
 
-        # -----------------------------
-        # EVENTS (include objects)
-        # -----------------------------
-        if "with" in lowered or any(p in lowered for p in PLACE_WORDS):
+        # EVENTS (now with sensory grounding)
+        if "with" in lowered or any(p in lowered for p in PLACE_WORDS) or "smell" in lowered or "hear" in lowered or "sound" in lowered or "noise" in lowered:
             place = self._extract_place(text)
             participants: Set[str] = set()
 
-            # speaker participates
             sp_ent = self.bridge.find_entity(speaker, owner_name=None)
             if sp_ent:
                 participants.add(sp_ent.entity_id)
 
-            # known entities mentioned (people/pets/objects)
             for e in self.bridge.entities.values():
                 if e.name.lower() in lowered:
                     participants.add(e.entity_id)
 
-            if place or len(participants) >= 2:
+            # NEW: sensory extraction
+            sx = self.sensory.extract(text)
+
+            if place or len(participants) >= 1 or sx.smells or sx.sounds:
                 self.events_graph.create_event(
                     participants=participants,
                     place=place,
                     description=text,
                     timestamp=now,
+                    smells=sx.smells,
+                    sounds=sx.sounds,
+                    raw_sensory=sx.raw,
                 )
 
-                # infer pet ownership from event cooccurrence
                 inf_q = self._maybe_infer_pet_owner_from_event(participants)
                 if inf_q:
                     return {"answer": inf_q, "tags": tags}
+
+                # brief acknowledgement of sensory capture
+                if sx.smells or sx.sounds:
+                    bits = []
+                    if sx.smells:
+                        bits.append(f"smell={', '.join(sx.smells)}")
+                    if sx.sounds:
+                        bits.append(f"sound={', '.join(sx.sounds)}")
+                    return {"answer": f"Noted — remembered that experience ({' | '.join(bits)}).", "tags": tags}
 
                 return {"answer": "Noted — that experience has been remembered.", "tags": tags}
 
