@@ -1,162 +1,124 @@
 import streamlit as st
 import networkx as nx
-from pyvis.network import Network
-import tempfile
-import os
+import matplotlib.pyplot as plt
 
-from a7do.mind import A7DOMind
-
-# -------------------------------------------------
-# Page setup
-# -------------------------------------------------
 st.set_page_config(page_title="A7DO Mind Graph", layout="wide")
-st.title("🕸️ A7DO — Mind Graph")
 
-mind: A7DOMind = st.session_state.get("mind")
+st.title("🧠 A7DO Mind Graph")
+
+mind = st.session_state.get("mind")
 
 if not mind:
-    st.warning("Mind not initialised yet.")
+    st.info("Mind not initialised yet.")
     st.stop()
 
-# -------------------------------------------------
-# Safe access helpers
-# -------------------------------------------------
-def safe_entities():
-    bridge = getattr(mind, "bridge", None)
-    if not bridge:
-        return []
-    return list(getattr(bridge, "entities", {}).values())
 
-def safe_relationships():
-    store = getattr(mind, "relationships", None)
-    if not store:
-        return []
-    try:
-        return store.all()
-    except Exception:
-        return []
-
-def safe_pending():
-    store = getattr(mind, "pending_relationships", None)
-    if not store:
-        return []
-    try:
-        return store.list_pending()
-    except Exception:
-        return []
+# -------------------------
+# Safe accessors
+# -------------------------
 
 def safe_events():
-    eg = getattr(mind, "events_graph", None)
-    if not eg:
-        return []
-    return list(getattr(eg, "events", {}).values())
+    """
+    Returns a list of Event objects regardless of internal storage shape.
+    """
+    evs = getattr(mind.events, "events", [])
 
-# -------------------------------------------------
-# Build graph
-# -------------------------------------------------
+    # If someone accidentally passes a dict, recover
+    if isinstance(evs, dict):
+        return list(evs.values())
+
+    # Normal case (list)
+    if isinstance(evs, list):
+        return evs
+
+    return []
+
+
+def safe_entities():
+    return getattr(mind.bridge, "entities", {})
+
+
+def safe_relationships():
+    return getattr(mind.bridge, "relationships", [])
+
+
+# -------------------------
+# Build Graph
+# -------------------------
+
 G = nx.Graph()
 
-# -------------------------------------------------
-# Entities
-# -------------------------------------------------
-for e in safe_entities():
-    label = f"{e.name}\n({e.kind})"
-    title = f"Entity: {e.name}\nKind: {e.kind}"
-    if getattr(e, "owner_name", None):
-        title += f"\nOwner: {e.owner_name}"
+# --- Entities ---
+entities = safe_entities()
+for eid, ent in entities.items():
+    label = f"{ent.name}\n({ent.kind})"
+    G.add_node(eid, label=label, type=ent.kind)
 
-    G.add_node(
-        e.entity_id,
-        label=label,
-        title=title,
-        shape="ellipse",
+
+# --- Relationships ---
+for rel in safe_relationships():
+    G.add_edge(
+        rel.source,
+        rel.target,
+        label=rel.relation
     )
 
-# -------------------------------------------------
-# Confirmed relationships
-# -------------------------------------------------
-for r in safe_relationships():
-    if r.subject_id in G.nodes and r.object_id in G.nodes:
-        G.add_edge(
-            r.subject_id,
-            r.object_id,
-            label=r.rel_type,
-            color="black",
-            width=2,
-        )
 
-# -------------------------------------------------
-# Pending relationships (confidence-weighted)
-# -------------------------------------------------
-for p in safe_pending():
-    if p.subject_id in G.nodes and p.object_id in G.nodes:
-        opacity = max(0.25, min(1.0, p.confidence))
-        G.add_edge(
-            p.subject_id,
-            p.object_id,
-            label=f"{p.rel_type}? ({p.confidence:.2f})",
-            color=f"rgba(255,0,0,{opacity})",
-            dashes=True,
-            width=2,
-        )
-
-# -------------------------------------------------
-# Events
-# -------------------------------------------------
+# --- Events ---
 for ev in safe_events():
-    ev_node = f"event-{ev.event_id}"
+    ev_id = f"event:{ev.id}"
+    G.add_node(ev_id, label="Event", type="event")
 
-    G.add_node(
-        ev_node,
-        label=ev.place or "Event",
-        title=ev.description,
-        shape="box",
-        color="#EEEEEE",
-    )
+    for ent_id in ev.entities:
+        if ent_id in G:
+            G.add_edge(ent_id, ev_id, label="experienced")
 
-    for pid in ev.participants:
-        if pid in G.nodes:
-            G.add_edge(
-                pid,
-                ev_node,
-                label="experienced",
-                color="#888888",
-                width=1,
-            )
+    for obj_id in ev.objects:
+        if obj_id in G:
+            G.add_edge(obj_id, ev_id, label="involved")
 
-# -------------------------------------------------
-# Render
-# -------------------------------------------------
-net = Network(height="800px", width="100%", bgcolor="#ffffff", font_color="black")
-net.from_nx(G)
 
-# Ensure dashed edges persist
-for e in net.edges:
-    if isinstance(e.get("label"), str) and "?" in e["label"]:
-        e["dashes"] = True
-        e["color"] = "red"
+# -------------------------
+# Draw Graph
+# -------------------------
 
-net.toggle_physics(True)
+if len(G.nodes) == 0:
+    st.info("No entities or events to display yet.")
+    st.stop()
 
-with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp:
-    net.save_graph(tmp.name)
-    html_path = tmp.name
+pos = nx.spring_layout(G, seed=42, k=1.1)
 
-with open(html_path, "r", encoding="utf-8") as f:
-    html = f.read()
+plt.figure(figsize=(14, 14))
 
-st.components.v1.html(html, height=850, scrolling=True)
-os.unlink(html_path)
+node_colors = []
+for _, data in G.nodes(data=True):
+    t = data.get("type", "")
+    if t == "person":
+        node_colors.append("#7dafff")
+    elif t == "pet":
+        node_colors.append("#9aff7d")
+    elif t == "object":
+        node_colors.append("#ffd27d")
+    elif t == "place":
+        node_colors.append("#ff9a9a")
+    elif t == "event":
+        node_colors.append("#cccccc")
+    else:
+        node_colors.append("#dddddd")
 
-# -------------------------------------------------
-# Legend
-# -------------------------------------------------
-st.markdown(
-    """
-### Legend
-- **Black edge** → confirmed relationship  
-- **Red dashed edge** → inferred (pending) relationship  
-- **Faded red** → low confidence (decaying)  
-- **Box node** → shared event  
-"""
+nx.draw(
+    G,
+    pos,
+    with_labels=False,
+    node_size=2000,
+    node_color=node_colors,
+    edgecolors="black"
 )
+
+labels = nx.get_node_attributes(G, "label")
+nx.draw_networkx_labels(G, pos, labels, font_size=9)
+
+edge_labels = nx.get_edge_attributes(G, "label")
+nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=8)
+
+st.pyplot(plt)
