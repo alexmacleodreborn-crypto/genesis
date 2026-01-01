@@ -1,13 +1,13 @@
 class Schedule:
     """
-    Always-present schedule.
+    Always-present schedule with place context.
     """
 
     def __init__(self):
         self.day = 0
-        self.place = None
+        self.place = "home"
         self.events = []
-        self.state = "waiting"  # waiting | awake | asleep | complete
+        self.state = "waiting"
 
     def load_day(self, day, place, events):
         self.day = day
@@ -18,13 +18,13 @@ class Schedule:
     def wake(self):
         self.state = "awake"
 
+    def next_event(self):
+        if self.events:
+            return self.events.pop(0)
+        return None
+
     def sleep(self):
         self.state = "asleep"
 
     def complete(self):
         self.state = "complete"
-
-    def next_event(self):
-        if self.events:
-            return self.events.pop(0)
-        return None
