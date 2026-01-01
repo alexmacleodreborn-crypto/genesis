@@ -23,10 +23,7 @@ with col1:
     st.subheader("Objects (records)")
     if hasattr(mind, "objects") and getattr(mind.objects, "objects", None):
         for oid, rec in mind.objects.objects.items():
-            st.write(
-                f"- **{rec.label}** (entity={rec.entity_id}) "
-                f"attrs={rec.attributes or {}}"
-            )
+            st.write(f"- **{rec.label}** (entity={rec.entity_id}) attrs={rec.attributes or {}}")
     else:
         st.write("_None_")
 
@@ -84,5 +81,20 @@ with col2:
                 st.write(f"- ({p.stage}) {p.prompt}")
         else:
             st.write("_None_")
+    else:
+        st.write("_None_")
+
+    st.subheader("Recent Events (with sensory)")
+    eg = getattr(mind, "events_graph", None)
+    if eg and getattr(eg, "events", None):
+        events = list(eg.events.values())
+        events = sorted(events, key=lambda e: e.timestamp, reverse=True)[:8]
+        for ev in events:
+            st.write(f"**{ev.place or 'event'}** — {ev.description}")
+            if ev.smells or ev.sounds or ev.raw_sensory:
+                st.write(f"- smells (norm): {ev.smells or []}")
+                st.write(f"- sounds (norm): {ev.sounds or []}")
+                st.write(f"- raw: {ev.raw_sensory or []}")
+            st.divider()
     else:
         st.write("_None_")
