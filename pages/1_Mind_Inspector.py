@@ -1,73 +1,85 @@
 import streamlit as st
 from a7do.mind import A7DOMind
 
-st.set_page_config(page_title="A7DO – Mind Inspector", layout="wide")
-st.title("🧠 A7DO Mind Inspector")
+st.set_page_config(page_title="Mind Inspector", layout="wide")
+st.title("🔍 A7DO — Mind Inspector")
 
-if "mind" not in st.session_state:
-    st.session_state.mind = A7DOMind()
+mind: A7DOMind = st.session_state.get("mind")
+if not mind:
+    st.warning("Mind not initialised yet.")
+    st.stop()
 
-mind = st.session_state.mind
+col1, col2 = st.columns(2)
 
-# ------------------------------
-# Memory
-# ------------------------------
-st.subheader("📜 Event / Memory Stream")
+with col1:
+    st.subheader("Entities")
+    ents = list(getattr(mind.bridge, "entities", {}).values())
+    if ents:
+        for e in ents:
+            st.write(f"- **{e.name}** ({e.kind})")
+    else:
+        st.write("_None_")
 
-frames = mind.events.recent(20) if hasattr(mind.events, "recent") else []
-if not frames:
-    st.caption("No events yet.")
-else:
-    for i, f in enumerate(frames[::-1], 1):
-        with st.expander(f"Event {i}"):
-            st.json(f if isinstance(f, dict) else {"event": str(f)})
+    st.subheader("Confirmed Relationships")
+    rels = []
+    try:
+        rels = mind.relationships.all()
+    except Exception:
+        rels = []
+    if rels:
+        for r in rels:
+            subj = mind.bridge.entities.get(r.subject_id)
+            obj = mind.bridge.entities.get(r.object_id)
+            if subj and obj:
+                st.write(f"- **{subj.name}** → *{r.rel_type}* → **{obj.name}**")
+    else:
+        st.write("_None_")
 
-# ------------------------------
-# Pending Entities
-# ------------------------------
-st.subheader("🧩 Pending Entities")
+with col2:
+    st.subheader("Linguistic Guard (Stage 1)")
+    guard = getattr(mind.language, "last_guard", {}) or {}
+    accepted = guard.get("accepted", [])
+    rejected = guard.get("rejected", [])
 
-PRONOUNS = {"i", "me", "my", "mine", "you", "your"}
+    st.write("**Accepted candidates:**")
+    if accepted:
+        st.write(", ".join(accepted))
+    else:
+        st.write("_None_")
 
-if not mind.bridge.pending:
-    st.caption("No pending entities.")
-else:
-    for key, p in list(mind.bridge.pending.items()):
-        with st.expander(f"{p.name} (confidence {p.confidence:.2f})"):
-            if p.name.lower() in PRONOUNS:
-                st.info("This is a pronoun — it will be handled as language, not an entity.")
-                if st.button("Record as language rule", key=f"lang_{key}"):
-                    del mind.bridge.pending[key]
-                    st.rerun()
-                continue
+    st.write("**Rejected tokens:**")
+    if rejected:
+        for r in rejected:
+            st.write(f"- `{r['token']}` — {r['reason']}")
+    else:
+        st.write("_None_")
 
-            kind = st.selectbox(
-                "Confirm as",
-                ["person", "pet", "place", "object", "concept"],
-                key=f"kind_{key}",
-            )
+    st.subheader("Pending Hypotheses")
+    pending = []
+    try:
+        pending = mind.pending_relationships.list_pending()
+    except Exception:
+        pending = []
+    if pending:
+        for p in pending:
+            subj = mind.bridge.entities.get(p.subject_id)
+            obj = mind.bridge.entities.get(p.object_id)
+            if subj and obj:
+                st.write(f"- **{obj.name}** might be **{subj.name}**’s dog ({p.confidence:.2f})")
+    else:
+        st.write("_None_")
 
-            if st.button("Confirm entity", key=f"confirm_{key}"):
-                mind.bridge.confirm_entity(
-                    name=p.name,
-                    kind=kind,
-                    owner_name=getattr(mind.identity, "creator", None),
-                )
-                st.rerun()
-
-# ------------------------------
-# Entity Graph
-# ------------------------------
-st.subheader("🗂️ Entity Graph")
-
-if not mind.bridge.entities:
-    st.caption("No promoted entities yet.")
-else:
-    for e in mind.bridge.entities.values():
-        st.markdown(
-            f"""
-**{e.name}**  
-Type: `{e.kind}`  
-Aliases: {", ".join(e.aliases) if e.aliases else "—"}
-"""
-        )
+    st.subheader("Dormant Hypotheses")
+    dormant = []
+    try:
+        dormant = mind.pending_relationships.list_dormant()
+    except Exception:
+        dormant = []
+    if dormant:
+        for p in dormant:
+            subj = mind.bridge.entities.get(p.subject_id)
+            obj = mind.bridge.entities.get(p.object_id)
+            if subj and obj:
+                st.write(f"- **{obj.name}** ↔ **{subj.name}** (faded)")
+    else:
+        st.write("_None_")
