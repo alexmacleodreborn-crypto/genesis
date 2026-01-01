@@ -2,6 +2,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import streamlit as st
 from a7do.profiles import WorldProfiles
 from a7do.schedule_engine import Schedule
