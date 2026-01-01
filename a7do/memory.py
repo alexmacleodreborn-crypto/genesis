@@ -4,3 +4,6 @@ class Memory:
 
     def add(self, **kwargs):
         self.entries.append(kwargs)
+
+    def recent(self, n: int = 20):
+        return self.entries[-n:]
