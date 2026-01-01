@@ -22,15 +22,22 @@ PLACE_WORDS = {"park", "home", "garden", "vet", "beach", "gate", "street"}
 
 
 class A7DOMind:
-    # ---------- Declarative patterns ----------
+    # ---------- Declarative ----------
     RE_IS_A_DOG = re.compile(r"^\s*(?P<name>[A-Za-z][A-Za-z\- ]+?)\s+is\s+a\s+dog\s*[.!?]*$", re.I)
     RE_MY_DOG = re.compile(r"^\s*(?P<name>[A-Za-z][A-Za-z\- ]+?)\s+is\s+my\s+dog\s*[.!?]*$", re.I)
 
+    # ---------- Identity ----------
     RE_SELF = re.compile(r"^\s*(my\s+name\s+is|i\s+am|i'm)\s+(?P<name>[A-Za-z][A-Za-z\- ]+)\s*[.!?]*$", re.I)
     RE_WHOAMI = re.compile(r"^\s*who\s+am\s+i\s*\??$", re.I)
 
+    # ---------- Recall ----------
     RE_RECALL_ABOUT = re.compile(r"^\s*what\s+do\s+you\s+remember\s+about\s+(?P<target>.+?)\s*\??$", re.I)
     RE_RECALL_PLACE = re.compile(r"^\s*what\s+happened\s+at\s+(?P<place>.+?)\s*\??$", re.I)
+
+    # ---------- Objects ----------
+    RE_MY_OBJECT = re.compile(r"^\s*my\s+(?P<label>ball|toy|stick|cube|block|box)\s*[.!?]*$", re.I)
+    RE_COLORED_OBJECT = re.compile(r"^\s*(?P<color>[a-zA-Z]+)\s+(?P<label>ball|toy|stick|cube|block|box)\s*[.!?]*$", re.I)
+    RE_A_OBJECT = re.compile(r"^\s*(a|the)\s+(?P<label>ball|toy|stick|cube|block|box)\s*[.!?]*$", re.I)
 
     def __init__(self):
         self.identity = Identity()
@@ -100,14 +107,12 @@ class A7DOMind:
         # ---------- Recall ----------
         m = self.RE_RECALL_ABOUT.match(text)
         if m:
-            target = m.group("target").strip()
-            events = self.recall_engine.recall(entity_name=target)
+            events = self.recall_engine.recall(entity_name=m.group("target").strip())
             return {"answer": self.recall_engine.format(events), "tags": tags}
 
         m = self.RE_RECALL_PLACE.match(text)
         if m:
-            place = m.group("place").strip()
-            events = self.recall_engine.recall(place=place)
+            events = self.recall_engine.recall(place=m.group("place").strip())
             return {"answer": self.recall_engine.format(events), "tags": tags}
 
         # ---------- Identity ----------
@@ -125,36 +130,67 @@ class A7DOMind:
         speaker = self._speaker_name()
         self._ensure_person(speaker)
 
-        # ---------- Declarative knowledge FIRST ----------
+        # ---------- Declarative facts ----------
         m = self.RE_MY_DOG.match(text)
         if m:
-            pet_name = m.group("name").strip()
-            pet = self.bridge.confirm_entity(name=pet_name, kind="pet", owner_name=speaker)
+            pet = self.bridge.confirm_entity(m.group("name"), kind="pet", owner_name=speaker)
             owner = self.bridge.find_entity(speaker, owner_name=None)
             if owner:
-                self.relationships.add(
-                    subject_id=owner.entity_id,
-                    object_id=pet.entity_id,
-                    rel_type="pet",
-                    note="explicit declaration"
-                )
-            return {"answer": f"Noted. **{pet_name}** is your dog.", "tags": tags}
+                self.relationships.add(owner.entity_id, pet.entity_id, "pet", "explicit")
+            return {"answer": f"Noted. **{pet.name}** is your dog.", "tags": tags}
 
         m = self.RE_IS_A_DOG.match(text)
         if m:
-            pet_name = m.group("name").strip()
-            self.bridge.confirm_entity(name=pet_name, kind="pet", owner_name=None)
-            return {"answer": f"Noted. **{pet_name}** is a dog.", "tags": tags}
+            self.bridge.confirm_entity(m.group("name"), kind="pet", owner_name=None)
+            return {"answer": f"Noted. **{m.group('name')}** is a dog.", "tags": tags}
+
+        # ---------- OBJECT GROUNDING (FIX) ----------
+        m = self.RE_COLORED_OBJECT.match(text)
+        if m:
+            color = m.group("color").lower()
+            label = m.group("label").lower()
+            ent_id, pending = self.objects.mention(
+                label,
+                entity_id_factory=self.bridge.confirm_entity,
+                owner_entity_id=self._speaker_entity_id(),
+                colour=color
+            )
+            if pending:
+                self.awaiting = {"type": "obj", "id": pending.pending_id}
+                return {"answer": pending.prompt, "tags": tags}
+            return {"answer": f"Noted. **{color} {label}**.", "tags": tags}
+
+        m = self.RE_MY_OBJECT.match(text)
+        if m:
+            label = m.group("label").lower()
+            ent_id, pending = self.objects.mention(
+                label,
+                entity_id_factory=self.bridge.confirm_entity,
+                owner_entity_id=self._speaker_entity_id()
+            )
+            if pending:
+                self.awaiting = {"type": "obj", "id": pending.pending_id}
+                return {"answer": pending.prompt, "tags": tags}
+            return {"answer": f"Noted. You have a **{label}**.", "tags": tags}
+
+        m = self.RE_A_OBJECT.match(text)
+        if m:
+            label = m.group("label").lower()
+            ent_id, pending = self.objects.mention(
+                label,
+                entity_id_factory=self.bridge.confirm_entity,
+                owner_entity_id=None
+            )
+            if pending:
+                self.awaiting = {"type": "obj", "id": pending.pending_id}
+                return {"answer": pending.prompt, "tags": tags}
+            return {"answer": f"Noted. **{label}**.", "tags": tags}
 
         # ---------- EVENT CAPTURE LAST ----------
         sx = self.sensory.extract(text)
         place = self._extract_place(text)
 
         participants: Set[str] = set()
-        sp_ent = self.bridge.find_entity(speaker, owner_name=None)
-        if sp_ent:
-            participants.add(sp_ent.entity_id)
-
         for e in self.bridge.entities.values():
             if e.name.lower() in lowered:
                 participants.add(e.entity_id)
