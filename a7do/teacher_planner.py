@@ -1,22 +1,43 @@
+from a7do.experience import ExperienceEvent
+
 def generate_day_schedule(world, day):
     """
-    AI-driven but SAFE schedule generator.
-    No invention. Uses only world profile.
+    Generates a grounded infant learning day.
     """
 
     events = []
 
-    # People introduction
-    for name in world.people:
-        events.append(f"this is {name.lower()}")
+    place = "bedroom"
 
-    # Pets introduction
-    for pet in world.pets:
-        events.append(f"this is {pet.lower()}")
+    # parents must exist
+    if "dad" in world.people:
+        dad = "dad"
+    else:
+        return []
 
-    # Objects introduction
-    for obj in world.objects:
-        events.append(f"look {obj.lower()}")
+    # Example core learning
+    events.append(
+        ExperienceEvent(
+            place=place,
+            agent=dad,
+            action="rolled",
+            obj="ball",
+            emphasis=["ball"],
+            environment={
+                "noise": "quiet",
+                "layout": ["bed", "window"]
+            }
+        )
+    )
 
-    # Limit infant learning
-    return events[:5]
+    events.append(
+        ExperienceEvent(
+            place=place,
+            agent=dad,
+            action="said",
+            obj="catch",
+            emphasis=["catch", "ball"]
+        )
+    )
+
+    return events
