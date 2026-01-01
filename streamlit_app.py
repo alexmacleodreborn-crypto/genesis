@@ -2,16 +2,17 @@ import streamlit as st
 from a7do.mind import A7DOMind
 
 # -------------------------------------------------
-# Page config
+# App setup
 # -------------------------------------------------
 st.set_page_config(
     page_title="A7DO Cognitive Interface",
-    page_icon="🧠",
     layout="wide",
 )
 
+st.title("🧠 A7DO Cognitive Interface")
+
 # -------------------------------------------------
-# Persistent Mind (shared across pages)
+# Initialise mind
 # -------------------------------------------------
 if "mind" not in st.session_state:
     st.session_state.mind = A7DOMind()
@@ -19,106 +20,122 @@ if "mind" not in st.session_state:
 mind: A7DOMind = st.session_state.mind
 
 # -------------------------------------------------
-# Sidebar — Identity & Navigation
+# Sidebar — Identity & World State
 # -------------------------------------------------
-st.sidebar.title("🧠 A7DO")
+with st.sidebar:
+    st.header("🧍 Identity")
 
-identity = mind.identity
+    speaker = mind.language.speaker() or getattr(mind.identity, "creator", "Unknown")
+    st.markdown(f"**Speaker:** {speaker}")
+    st.markdown("**Agent:** A7DO")
 
-st.sidebar.markdown("### Identity")
-st.sidebar.markdown(f"**Name:** {getattr(identity, 'creator', '—') or '—'}")
-st.sidebar.markdown("**Type:** Artificial Cognitive System")
+    st.divider()
 
-st.sidebar.divider()
+    st.header("🌍 World State")
 
-st.sidebar.markdown("### Navigation")
-st.sidebar.markdown(
-    """
-- 💬 **Chat** (this page)  
-- 🕸️ **Mind Graph** → use left menu  
-"""
-)
+    st.markdown(f"**People / Pets / Agent:** {len(mind.bridge.entities)}")
+    st.markdown(f"**Objects:** {len(mind.objects.objects)}")
+    st.markdown(f"**Events:** {len(mind.events.events)}")
 
-st.sidebar.divider()
+    st.divider()
 
-# -------------------------------------------------
-# Main Chat Interface
-# -------------------------------------------------
-st.title("💬 A7DO — Cognitive Dialogue")
+    if st.checkbox("Show Raw Entities"):
+        for ent in mind.bridge.entities.values():
+            st.markdown(
+                f"- **{ent.name}** "
+                f"({ent.kind}, conf={ent.confidence:.2f}, origin={ent.origin})"
+            )
 
-st.caption(
-    "This interface lets you speak naturally while A7DO builds entities, "
-    "relationships, and shared experiences in real time."
-)
-
-# -------------------------------------------------
-# Chat history (simple, safe)
-# -------------------------------------------------
-if "chat_log" not in st.session_state:
-    st.session_state.chat_log = []
-
-for role, msg in st.session_state.chat_log:
-    with st.chat_message(role):
-        st.markdown(msg)
+    if st.checkbox("Show Objects"):
+        for obj in mind.objects.objects.values():
+            st.markdown(
+                f"- **{obj.label}**"
+                f"{' (' + obj.colour + ')' if obj.colour else ''} | "
+                f"state={obj.state} | "
+                f"owner={obj.owner_entity_id} | "
+                f"attached={obj.attached_to}"
+            )
 
 # -------------------------------------------------
-# User input
+# Main chat interface
 # -------------------------------------------------
-user_text = st.chat_input("Say something…")
+st.subheader("💬 Interaction")
+
+user_text = st.text_input("Say something to A7DO:")
 
 if user_text:
-    # Show user message
-    st.session_state.chat_log.append(("user", user_text))
-    with st.chat_message("user"):
-        st.markdown(user_text)
-
-    # Process through the mind
     result = mind.process(user_text)
-
-    answer = result.get("answer", "…")
-
-    # Show A7DO response
-    st.session_state.chat_log.append(("assistant", answer))
-    with st.chat_message("assistant"):
-        st.markdown(answer)
+    st.session_state.last_result = result
 
 # -------------------------------------------------
-# Debug / Introspection Panel
+# Response
 # -------------------------------------------------
-with st.expander("🔍 Mind Inspector", expanded=False):
+if "last_result" in st.session_state:
+    res = st.session_state.last_result
+    st.markdown("### 🗨️ A7DO")
+    st.markdown(res.get("answer", "—"))
 
-    col1, col2, col3 = st.columns(3)
+# -------------------------------------------------
+# Event timeline
+# -------------------------------------------------
+st.divider()
+st.subheader("🕒 Event Timeline")
 
-    with col1:
-        st.markdown("#### Entities")
-        if mind.bridge.entities:
-            for e in mind.bridge.entities.values():
-                st.markdown(
-                    f"- **{e.name}** ({e.kind})"
-                    + (f" — owner: {e.owner_name}" if e.owner_name else "")
-                )
-        else:
-            st.markdown("_No entities yet_")
+if mind.events.events:
+    for i, ev in enumerate(reversed(mind.events.events), start=1):
+        with st.expander(f"Event {len(mind.events.events) - i + 1}"):
+            st.markdown(f"**Description:** {ev.description}")
+            st.markdown(f"**Place:** {ev.place or '—'}")
+            st.markdown(f"**Time:** {ev.timestamp:.2f}")
 
-    with col2:
-        st.markdown("#### Events")
-        if mind.events_graph.events:
-            for ev in mind.events_graph.events.values():
-                names = [
-                    mind.bridge.entities[p].name
-                    for p in ev.participants
-                    if p in mind.bridge.entities
-                ]
-                st.markdown(
-                    f"- **{ev.place or 'Event'}** → {', '.join(names)}"
-                )
-        else:
-            st.markdown("_No shared events yet_")
+            if ev.participants:
+                st.markdown("**Participants:**")
+                for pid in ev.participants:
+                    ent = mind.bridge.entities.get(pid)
+                    if ent:
+                        st.markdown(f"- {ent.name} ({ent.kind})")
 
-    with col3:
-        st.markdown("#### Coherence")
-        try:
-            coh = mind.coherence.evaluate(text="", tags=[])
-            st.metric("Score", coh.get("score", "—"))
-        except Exception:
-            st.metric("Score", "—")
+            if ev.smells:
+                st.markdown(f"**Smells:** {', '.join(ev.smells)}")
+            if ev.sounds:
+                st.markdown(f"**Sounds:** {', '.join(ev.sounds)}")
+else:
+    st.info("No events recorded yet.")
+
+# -------------------------------------------------
+# Relationships
+# -------------------------------------------------
+st.divider()
+st.subheader("🔗 Relationships")
+
+if mind.relationships.relations:
+    for rel in mind.relationships.relations:
+        a = mind.bridge.entities.get(rel.subject_id)
+        b = mind.bridge.entities.get(rel.object_id)
+        if a and b:
+            st.markdown(
+                f"- **{a.name}** → *{rel.rel_type}* → **{b.name}**"
+            )
+else:
+    st.info("No relationships recorded.")
+
+# -------------------------------------------------
+# Objects recall
+# -------------------------------------------------
+st.divider()
+st.subheader("🧸 Objects")
+
+if mind.objects.objects:
+    for obj in mind.objects.objects.values():
+        owner = mind.bridge.entities.get(obj.owner_entity_id)
+        attached = mind.bridge.entities.get(obj.attached_to)
+
+        st.markdown(
+            f"- **{obj.label}**"
+            f"{' (' + obj.colour + ')' if obj.colour else ''} | "
+            f"state={obj.state} | "
+            f"owner={owner.name if owner else '—'} | "
+            f"attached={attached.name if attached else '—'}"
+        )
+else:
+    st.info("No objects yet.")
