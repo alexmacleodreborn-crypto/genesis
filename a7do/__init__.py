@@ -1,3 +1,3 @@
-from .profiles import WorldProfiles
-from .schedule_engine import Schedule
-from .mind import A7DOMind
+from a7do.profiles import WorldProfiles
+from a7do.schedule_engine import Schedule
+from a7do.mind import A7DOMind
