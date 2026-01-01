@@ -1,86 +1,156 @@
-import time
-import math
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Set, Tuple
+from collections import defaultdict
 
 
 @dataclass
-class ReflectionVersion:
-    version_id: str
-    reflection_key: Tuple[str, str]  # (entity_id, pattern)
-    score: float
-    band: str
-    created_at: float
-    last_seen: float
-    support_events: List[str]
-    active: bool = True
+class ReflectionCluster:
+    nodes: List[str]
+    strength: float
+    label: str
 
 
-class ReflectionStore:
+class ReflectionEngine:
+    """
+    Reflection Pattern 1:
+    - Non-verbal replay of connected, external events
+    - Builds co-occurrence weights
+    - Reinforces frequently co-occurring nodes
+    - Applies gentle decay to unused, weak nodes
+    """
     def __init__(self):
-        self.versions: Dict[Tuple[str, str], List[ReflectionVersion]] = {}
-        self._counter = 0
+        self.last_clusters: List[ReflectionCluster] = []
+        self.last_weights: Dict[Tuple[str, str], float] = {}
 
-    def _new_version_id(self):
-        self._counter += 1
-        return f"RV_{self._counter:05d}"
+    def run_pattern_1(self, day_events: List[Dict[str, Any]]) -> Dict[str, Any]:
+        # Collect nodes per event (external truth only)
+        event_nodes: List[Set[str]] = []
+        for ev in day_events:
+            nodes = set()
 
-    def confidence_band(self, score: float) -> str:
-        if score < 0.3:
-            return "very_low"
-        if score < 0.6:
-            return "low"
-        if score < 1.0:
-            return "medium"
-        return "high"
+            # entities
+            for eid in ev.get("entities", []):
+                nodes.add(f"ent:{eid}")
 
-    def score(self, freq, consistency, breadth, recency):
-        return freq * consistency * breadth * recency
+            # objects
+            for oid in ev.get("objects", []):
+                nodes.add(f"obj:{oid}")
 
-    def create_version(
-        self,
-        entity_id: str,
-        pattern: str,
-        freq: int,
-        consistency: float,
-        breadth: float,
-        last_seen_ts: float,
-        support_events: List[str],
-        tau: float = 3600.0
-    ):
-        F = math.log(1 + freq)
-        C = consistency
-        B = breadth
-        R = math.exp(-(time.time() - last_seen_ts) / tau)
+            # place
+            place = ev.get("place")
+            if place:
+                nodes.add(f"place:{place}")
 
-        score = self.score(F, C, B, R)
-        band = self.confidence_band(score)
+            # sensory
+            for s in ev.get("smells", []):
+                nodes.add(f"smell:{s}")
+            for s in ev.get("sounds", []):
+                nodes.add(f"sound:{s}")
 
-        key = (entity_id, pattern)
-        version = ReflectionVersion(
-            version_id=self._new_version_id(),
-            reflection_key=key,
-            score=score,
-            band=band,
-            created_at=time.time(),
-            last_seen=last_seen_ts,
-            support_events=support_events,
-            active=True
-        )
+            # emotion tag (external builder can provide)
+            emo = ev.get("emotion")
+            if emo:
+                nodes.add(f"emo:{emo}")
 
-        self.versions.setdefault(key, []).append(version)
-        return version
+            if nodes:
+                event_nodes.append(nodes)
 
-    def active_versions(self, entity_id: str):
-        out = []
-        for (eid, _), versions in self.versions.items():
-            if eid == entity_id:
-                out.extend(v for v in versions if v.active)
-        return out
+        # Build co-occurrence weights
+        weights = defaultdict(float)
+        node_freq = defaultdict(float)
 
-    def decay(self, tau: float = 7200.0):
-        now = time.time()
-        for versions in self.versions.values():
-            for v in versions:
-                if now - v.last_seen > tau:
-                    v.active = False
+        for nodes in event_nodes:
+            nodes_list = list(nodes)
+            for n in nodes_list:
+                node_freq[n] += 1.0
+            for i in range(len(nodes_list)):
+                for j in range(i + 1, len(nodes_list)):
+                    a, b = nodes_list[i], nodes_list[j]
+                    if a > b:
+                        a, b = b, a
+                    weights[(a, b)] += 1.0
+
+        self.last_weights = dict(weights)
+
+        # Build simple clusters: strongest pairs expanded by shared nodes
+        clusters: List[ReflectionCluster] = []
+        # Sort edges by weight descending
+        edges_sorted = sorted(weights.items(), key=lambda kv: kv[1], reverse=True)
+
+        used_nodes = set()
+        for (a, b), w in edges_sorted[:12]:  # cap to keep fast
+            # Build cluster seed
+            cluster_nodes = {a, b}
+
+            # expand: add nodes that co-occur strongly with either a or b
+            for (x, y), w2 in weights.items():
+                if w2 < 2:
+                    continue
+                if x in cluster_nodes or y in cluster_nodes:
+                    cluster_nodes.add(x)
+                    cluster_nodes.add(y)
+
+            # compute strength
+            strength = sum(node_freq[n] for n in cluster_nodes) / max(1.0, len(cluster_nodes))
+            label = " ↔ ".join(sorted(list(cluster_nodes))[:4])
+            clusters.append(ReflectionCluster(nodes=sorted(list(cluster_nodes)), strength=float(strength), label=label))
+
+            used_nodes |= cluster_nodes
+            if len(clusters) >= 6:
+                break
+
+        # Fallback cluster: most frequent nodes
+        if not clusters and node_freq:
+            top = sorted(node_freq.items(), key=lambda kv: kv[1], reverse=True)[:8]
+            clusters.append(ReflectionCluster(nodes=[k for k, _ in top], strength=float(top[0][1]), label="Top nodes"))
+
+        self.last_clusters = clusters
+
+        return {
+            "clusters": [c.__dict__ for c in clusters],
+            "node_freq": dict(node_freq),
+            "edge_count": len(weights),
+            "event_count": len(event_nodes),
+        }
+
+    def reinforce_entities(self, bridge_entities: Dict[str, Any], node_freq: Dict[str, float]) -> Dict[str, Any]:
+        """
+        Increase confidence only for entities that appeared in external replay.
+        Apply small decay for entities not replayed (prevents clutter).
+        """
+        reinforced = []
+        decayed = []
+
+        # determine which ent IDs were present
+        present_ent_ids = set()
+        for node in node_freq.keys():
+            if node.startswith("ent:"):
+                present_ent_ids.add(node.split("ent:", 1)[1])
+
+        # reinforce present
+        for eid in present_ent_ids:
+            e = bridge_entities.get(eid)
+            if not e:
+                continue
+            old = float(getattr(e, "confidence", 1.0))
+            new = min(1.0, old + 0.02)
+            setattr(e, "confidence", new)
+            if new != old:
+                reinforced.append((getattr(e, "name", eid), old, new))
+
+        # decay absent (gentle)
+        for eid, e in bridge_entities.items():
+            if eid in present_ent_ids:
+                continue
+            old = float(getattr(e, "confidence", 1.0))
+            # don't decay the agent or locked speaker too aggressively
+            if getattr(e, "kind", "") == "agent":
+                continue
+            if old <= 0.35:
+                continue
+            new = max(0.30, old - 0.01)
+            setattr(e, "confidence", new)
+            if new != old:
+                decayed.append((getattr(e, "name", eid), old, new))
+
+        return {"reinforced": reinforced, "decayed": decayed}
