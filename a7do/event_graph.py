@@ -19,19 +19,19 @@ class EventGraph:
 
     def create_event(
         self,
-        participants,
-        place,
-        description,
-        timestamp=None,
-        smells=None,
-        sounds=None,
+        participants: Set[str],
+        place: Optional[str],
+        description: str,
+        timestamp: Optional[float] = None,
+        smells: Optional[List[str]] = None,
+        sounds: Optional[List[str]] = None,
     ):
         self.events.append(
             Event(
                 participants=participants or set(),
                 place=place,
                 description=description,
-                timestamp=timestamp or time.time(),
+                timestamp=timestamp if timestamp is not None else time.time(),
                 smells=smells or [],
                 sounds=sounds or [],
             )
