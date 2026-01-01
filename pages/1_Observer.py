@@ -11,7 +11,7 @@ if not mind:
     st.stop()
 
 st.subheader("Last Action")
-st.write(mind.last_action or "—")
+st.write(mind.last or "—")
 
 st.subheader("Recent Experiences")
 for p in mind.experiences.recent(10):
