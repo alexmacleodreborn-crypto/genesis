@@ -20,6 +20,16 @@ with col1:
     else:
         st.write("_None_")
 
+    st.subheader("Objects (records)")
+    if hasattr(mind, "objects") and getattr(mind.objects, "objects", None):
+        for oid, rec in mind.objects.objects.items():
+            st.write(
+                f"- **{rec.label}** (entity={rec.entity_id}) "
+                f"attrs={rec.attributes or {}}"
+            )
+    else:
+        st.write("_None_")
+
     st.subheader("Confirmed Relationships")
     rels = []
     try:
@@ -42,10 +52,7 @@ with col2:
     rejected = guard.get("rejected", [])
 
     st.write("**Accepted candidates:**")
-    if accepted:
-        st.write(", ".join(accepted))
-    else:
-        st.write("_None_")
+    st.write(", ".join(accepted) if accepted else "_None_")
 
     st.write("**Rejected tokens:**")
     if rejected:
@@ -54,14 +61,14 @@ with col2:
     else:
         st.write("_None_")
 
-    st.subheader("Pending Hypotheses")
-    pending = []
+    st.subheader("Pending Relationship Hypotheses")
+    pending_rel = []
     try:
-        pending = mind.pending_relationships.list_pending()
+        pending_rel = mind.pending_relationships.list_pending()
     except Exception:
-        pending = []
-    if pending:
-        for p in pending:
+        pending_rel = []
+    if pending_rel:
+        for p in pending_rel:
             subj = mind.bridge.entities.get(p.subject_id)
             obj = mind.bridge.entities.get(p.object_id)
             if subj and obj:
@@ -69,17 +76,13 @@ with col2:
     else:
         st.write("_None_")
 
-    st.subheader("Dormant Hypotheses")
-    dormant = []
-    try:
-        dormant = mind.pending_relationships.list_dormant()
-    except Exception:
-        dormant = []
-    if dormant:
-        for p in dormant:
-            subj = mind.bridge.entities.get(p.subject_id)
-            obj = mind.bridge.entities.get(p.object_id)
-            if subj and obj:
-                st.write(f"- **{obj.name}** ↔ **{subj.name}** (faded)")
+    st.subheader("Pending Object Disambiguations")
+    if hasattr(mind, "objects") and getattr(mind.objects, "pending", None):
+        pend = list(mind.objects.pending.values())
+        if pend:
+            for p in pend:
+                st.write(f"- ({p.stage}) {p.prompt}")
+        else:
+            st.write("_None_")
     else:
         st.write("_None_")
