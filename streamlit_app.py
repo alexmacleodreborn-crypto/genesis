@@ -1,162 +1,253 @@
 import streamlit as st
+
 from a7do.mind import A7DOMind
+from a7do.schedule import ScheduleEngine, ScheduledEvent
 from a7do.graph import build_brain_dot
 
 st.set_page_config(page_title="A7DO Cognitive Interface", layout="wide")
 
-# -------------------------------------------------
-# Safe initialisation (handles hot reload issues)
-# -------------------------------------------------
-def get_mind():
-    if "mind" not in st.session_state:
-        st.session_state.mind = A7DOMind()
-        return st.session_state.mind
+# -------------------------
+# Session init
+# -------------------------
+if "mind" not in st.session_state or not hasattr(st.session_state.get("mind"), "identity"):
+    st.session_state.mind = A7DOMind()
 
-    mind = st.session_state.mind
+if "schedule" not in st.session_state:
+    st.session_state.schedule = ScheduleEngine()
 
-    # If architecture changed mid-session, re-init safely
-    if not hasattr(mind, "identity"):
-        st.session_state.mind = A7DOMind()
-        return st.session_state.mind
+if "log" not in st.session_state:
+    st.session_state.log = []
 
-    return mind
+mind: A7DOMind = st.session_state.mind
+sched: ScheduleEngine = st.session_state.schedule
 
-
-mind: A7DOMind = get_mind()
-
-if "chat" not in st.session_state:
-    st.session_state.chat = []
-
-# -------------------------------------------------
+# -------------------------
 # Header
-# -------------------------------------------------
-st.markdown("# 🧠 A7DO Cognitive Interface")
-st.caption("Entities · Objects · Relationships · Events · Experiences · Recall")
+# -------------------------
+st.markdown("# 🧠 A7DO — Scheduled Cognition")
+st.caption("External Schedule → Builders → Events → Sleep → Reflection (Pattern 1 replay)")
 
-# -------------------------------------------------
-# Sidebar
-# -------------------------------------------------
+# -------------------------
+# Sidebar: Identity + Schedule State
+# -------------------------
 with st.sidebar:
     st.subheader("Identity")
-
-    if hasattr(mind, "identity") and hasattr(mind.identity, "panel_markdown"):
-        st.markdown(mind.identity.panel_markdown())
-    else:
-        st.warning("Identity layer not initialised")
+    st.markdown(mind.identity.panel_markdown())
 
     st.divider()
-    st.subheader("System State")
+    st.subheader("Schedule State")
+    s = sched.status()
+    st.metric("Day", s["day"])
+    st.metric("Awake used", s["awake_used"])
+    st.metric("Awake remaining", s["awake_remaining"])
+    st.write(f"Started: **{s['started']}**  |  Asleep: **{s['asleep']}**  |  Completed: **{s['completed']}**")
+    st.write(f"Events queued: **{s['events_count']}**  | Cursor: **{s['cursor']}**")
 
-    st.metric("Entities", len(mind.bridge.entities))
-    st.metric("Objects", len(mind.objects.objects))
-    st.metric("Relationships", len(mind.relationships.relations))
-    st.metric("Events", len(mind.events.events))
-    st.metric("Experiences", len(mind.experiences.experiences))
+    if st.button("Reset schedule + mind day buffer"):
+        sched.reset()
+        mind.new_day_reset()
+        st.session_state.log = []
+        st.rerun()
 
-    st.divider()
-    st.subheader("Quick prompts")
-    st.write("• My name is Alex Macleod")
-    st.write("• Xena is my dog")
-    st.write("• We are at the park with the red ball")
-    st.write("• Where is the red ball?")
-    st.write("• We are at the park and there is a swing")
-
-# -------------------------------------------------
+# -------------------------
 # Tabs
-# -------------------------------------------------
-tab_chat, tab_world, tab_experiences, tab_graph = st.tabs(
-    ["💬 Chat", "🌍 World", "📓 Experiences", "🧬 Brain Graph"]
+# -------------------------
+tab_schedule, tab_world, tab_reflection, tab_graph = st.tabs(
+    ["📆 Schedule Builders", "🌍 World State", "🌙 Sleep & Reflection", "🧬 Brain Graph"]
 )
 
-# -------------------------------------------------
-# CHAT TAB
-# -------------------------------------------------
-with tab_chat:
-    st.subheader("Chat")
+# ============================================================
+# TAB 1: SCHEDULE BUILDERS
+# ============================================================
+with tab_schedule:
+    st.subheader("Build today’s schedule (external truth)")
+    st.caption("Add at least 1 event, then press Start Schedule. Each event costs 1 awake-hour (max 6). Sleep is forced.")
 
-    user_text = st.text_input("Say something to A7DO:")
+    colA, colB = st.columns([1, 1])
 
-    if user_text:
-        result = mind.process(user_text)
-        st.session_state.chat.append(("You", user_text))
-        st.session_state.chat.append(("A7DO", result.get("answer", "—")))
+    with colA:
+        st.markdown("### Add an event")
+        builder = st.selectbox(
+            "Builder",
+            ["user_input", "relationship", "object", "sensory", "language", "shapes", "routine"],
+        )
 
-    for who, msg in st.session_state.chat[-40:]:
-        if who == "You":
-            st.markdown(f"**You:** {msg}")
+        payload = {}
+
+        if builder == "user_input":
+            payload["name"] = st.text_input("Name (optional)", value="")
+            payload["text"] = st.text_area("User input text (day anchor)", value="hello")
+
+        elif builder == "relationship":
+            payload["subject"] = st.text_input("Subject (blank = speaker)", value="")
+            payload["relation"] = st.text_input("Relation (pet/friend/uncle/owns/etc.)", value="friend")
+            payload["object"] = st.text_input("Object (entity name)", value="Craig")
+            payload["object_kind"] = st.selectbox("Object kind", ["person", "pet", "agent"], index=0)
+            payload["note"] = st.text_input("Note", value="scheduled")
+
+        elif builder == "object":
+            payload["label"] = st.text_input("Object label (ball/swing/etc.)", value="ball")
+            payload["colour"] = st.text_input("Colour (optional)", value="red")
+            payload["owner"] = st.text_input("Owner (blank = speaker)", value="")
+            payload["attached_to"] = st.text_input("Attached to (pet/person name optional)", value="")
+            payload["state"] = st.selectbox("State", ["present", "gone"], index=0)
+            payload["place"] = st.text_input("Place (optional)", value="park")
+
+        elif builder == "sensory":
+            payload["place"] = st.text_input("Place", value="park")
+            payload["smells"] = st.text_input("Smells (comma-separated)", value="fresh grass").split(",")
+            payload["sounds"] = st.text_input("Sounds (comma-separated)", value="birds").split(",")
+            payload["emotion"] = st.text_input("Emotion (optional)", value="calm")
+            payload["note"] = st.text_input("Note", value="sensory snapshot")
+
+        elif builder == "language":
+            payload["concept"] = st.text_input("Concept (pronoun/tense/etc.)", value="pronoun")
+            payload["token"] = st.text_input("Token", value="I")
+            payload["meaning"] = st.text_input("Meaning", value="speaker refers to self")
+            payload["examples"] = st.text_area("Examples (optional)", value="I am Alex.\nMy dog is Xena.")
+
+        elif builder == "shapes":
+            payload["shape"] = st.text_input("Shape", value="circle")
+            payload["properties"] = st.text_area("Properties (optional)", value="round, no corners")
+            payload["example"] = st.text_input("Example", value="ball")
+
+        elif builder == "routine":
+            payload["slot"] = st.selectbox("Slot", ["morning", "afternoon", "evening"], index=0)
+            payload["activity"] = st.text_input("Activity", value="go to the park")
+            payload["participants"] = [x.strip() for x in st.text_input("Participants (comma-separated)", value="Alex, Xena").split(",")]
+            payload["place"] = st.text_input("Place (optional)", value="park")
+
+        if st.button("Add event to today"):
+            try:
+                sched.day.add_event(ScheduledEvent(builder=builder, payload=payload))
+                st.success("Event added.")
+                st.rerun()
+            except Exception as e:
+                st.error(str(e))
+
+    with colB:
+        st.markdown("### Today’s event queue")
+        if not sched.day.events:
+            st.info("No events yet. Add at least 1 event.")
         else:
-            st.markdown(f"**A7DO:** {msg}")
+            for i, ev in enumerate(sched.day.events):
+                st.write(f"**{i+1}.** `{ev.builder}` — {ev.payload}")
 
-# -------------------------------------------------
-# WORLD TAB
-# -------------------------------------------------
+        st.divider()
+
+        start_ok = sched.day.has_minimum_to_start() and (not sched.day.started)
+        if st.button("▶️ Start Schedule", disabled=not start_ok):
+            try:
+                sched.day.start()
+                # auto Wake (not counted as an awake-hour event)
+                st.session_state.log.append(("SYSTEM", f"Day {sched.day.day_index} — WAKE"))
+                st.success("Schedule started. A7DO is awake.")
+                st.rerun()
+            except Exception as e:
+                st.error(str(e))
+
+        run_disabled = (not sched.day.started) or sched.day.asleep or sched.day.completed
+        if st.button("➡️ Run next event (1 hour)", disabled=run_disabled):
+            ev = sched.day.consume_next()
+            if ev is None:
+                # force sleep boundary
+                sched.day.mark_sleep()
+                st.session_state.log.append(("SYSTEM", "Forced SLEEP (awake hours boundary or events ended)."))
+                st.rerun()
+            else:
+                with st.spinner("A7DO processing scheduled event..."):
+                    result = mind.ingest_scheduled_event(ev.builder, ev.payload)
+                st.session_state.log.append((ev.builder, result.get("answer", "—")))
+
+                # check forced sleep
+                if sched.day.should_force_sleep():
+                    sched.day.mark_sleep()
+                    st.session_state.log.append(("SYSTEM", "Entering SLEEP (end of awake window)."))
+
+                st.rerun()
+
+        if st.button("🌙 Run Sleep (Reflection Pattern 1)", disabled=(not sched.day.asleep or sched.day.completed)):
+            # run sleep
+            report = mind.sleep()
+            st.session_state.log.append(("SLEEP", "Reflection Pattern 1 complete."))
+            sched.day.mark_complete()
+            st.rerun()
+
+        if st.button("➡️ Advance Day", disabled=(not sched.day.completed)):
+            sched.new_day()
+            mind.new_day_reset()
+            st.session_state.log.append(("SYSTEM", f"Advanced to Day {sched.day.day_index} (awaiting schedule)."))
+            st.rerun()
+
+        st.divider()
+        st.markdown("### Run Log")
+        for who, msg in st.session_state.log[-40:]:
+            st.write(f"**{who}:** {msg}")
+
+# ============================================================
+# TAB 2: WORLD STATE
+# ============================================================
 with tab_world:
-    c1, c2 = st.columns(2)
+    st.subheader("Entities")
+    for e in mind.bridge.entities.values():
+        st.write(f"• {e.name} ({e.kind}) conf={e.confidence:.2f} origin={e.origin}")
 
-    with c1:
-        st.subheader("Entities")
-        if not mind.bridge.entities:
-            st.info("No entities yet.")
-        for e in mind.bridge.entities.values():
-            st.write(f"• {e.name} ({e.kind}) conf={e.confidence:.2f} origin={e.origin}")
-
-        st.subheader("Relationships")
-        if not mind.relationships.relations:
-            st.info("No relationships yet.")
+    st.subheader("Relationships")
+    if not mind.relationships.relations:
+        st.info("No relationships.")
+    else:
         for r in mind.relationships.relations:
             a = mind.bridge.entities.get(r.subject_id)
             b = mind.bridge.entities.get(r.object_id)
             if a and b:
                 st.write(f"• {a.name} → {r.rel_type} → {b.name} ({r.note})")
 
-    with c2:
-        st.subheader("Objects")
-        if not mind.objects.objects:
-            st.info("No objects yet.")
+    st.subheader("Objects")
+    if not mind.objects.objects:
+        st.info("No objects.")
+    else:
         for o in mind.objects.objects.values():
             owner = mind.bridge.entities.get(o.owner_entity_id)
             attached = mind.bridge.entities.get(o.attached_to)
             st.write(
-                f"• {(o.colour + ' ') if o.colour else ''}{o.label} | "
-                f"state={o.state} | "
-                f"owner={owner.name if owner else '—'} | "
-                f"attached={attached.name if attached else '—'} | "
+                f"• {(o.colour + ' ') if o.colour else ''}{o.label} | state={o.state} | "
+                f"owner={owner.name if owner else '—'} | attached={attached.name if attached else '—'} | "
                 f"last_place={o.location or 'unknown'}"
             )
 
-        st.subheader("Events (latest 20)")
-        for ev in reversed(mind.events.events[-20:]):
-            st.write(f"• [{ev.place or '—'}] {ev.description}")
-            if ev.smells:
-                st.caption(f"smells: {', '.join(ev.smells)}")
-            if ev.sounds:
-                st.caption(f"sounds: {', '.join(ev.sounds)}")
-
-# -------------------------------------------------
-# EXPERIENCES TAB
-# -------------------------------------------------
-with tab_experiences:
-    st.subheader("Structured Experiences")
-
-    if not mind.experiences.experiences:
-        st.info("No experiences yet.")
+    st.subheader("External Day Events (truth replay buffer)")
+    if not mind.day_external_events:
+        st.info("None yet today.")
     else:
-        for ex in reversed(list(mind.experiences.experiences.values())[-30:]):
-            with st.expander(f"{ex.object_label} @ {ex.place}"):
-                st.write(f"Interaction: {ex.interaction or '—'}")
-                st.write(f"Visual: {ex.visual or '—'}")
-                st.write(f"Emotion: {ex.emotion or '—'}")
-                st.write(f"Action: {ex.action or '—'}")
-                st.write(f"Preference: {ex.preference or '—'}")
+        for ev in mind.day_external_events[-30:]:
+            st.write(ev)
 
-# -------------------------------------------------
-# BRAIN GRAPH TAB
-# -------------------------------------------------
+# ============================================================
+# TAB 3: SLEEP & REFLECTION
+# ============================================================
+with tab_reflection:
+    st.subheader("Sleep Report (Pattern 1 replay)")
+    if not mind.last_sleep_report:
+        st.info("No sleep run yet.")
+    else:
+        st.json(mind.last_sleep_report)
+
+    st.subheader("Reflection clusters (visual reoccurrence)")
+    clusters = mind.sleep_engine.reflection.last_clusters
+    if not clusters:
+        st.info("No clusters yet (run sleep).")
+    else:
+        for c in clusters:
+            with st.expander(f"{c.label} (strength={c.strength:.2f})"):
+                for n in c.nodes:
+                    st.write(f"- {n}")
+
+# ============================================================
+# TAB 4: BRAIN GRAPH
+# ============================================================
 with tab_graph:
-    st.subheader("Brain-like World Graph")
-
+    st.subheader("World Graph")
     dot = build_brain_dot(mind)
     st.graphviz_chart(dot, use_container_width=True)
-
     with st.expander("DOT source"):
         st.code(dot)
