@@ -1,100 +1,119 @@
 import streamlit as st
 from a7do.mind import A7DOMind
 
-st.set_page_config(page_title="Mind Inspector", layout="wide")
-st.title("🔍 A7DO — Mind Inspector")
+st.set_page_config(page_title="A7DO – Mind Inspector", layout="wide")
 
-mind: A7DOMind = st.session_state.get("mind")
-if not mind:
-    st.warning("Mind not initialised yet.")
+# -------------------------------
+# Load mind from session
+# -------------------------------
+if "mind" not in st.session_state:
+    st.error("Mind not initialised. Go back to the main page first.")
     st.stop()
 
-col1, col2 = st.columns(2)
+mind: A7DOMind = st.session_state.mind
 
-with col1:
-    st.subheader("Entities")
-    ents = list(getattr(mind.bridge, "entities", {}).values())
-    if ents:
-        for e in ents:
-            st.write(f"- **{e.name}** ({e.kind})")
-    else:
-        st.write("_None_")
+st.title("🧠 A7DO Mind Inspector")
+st.caption("Live inspection of internal cognitive layers")
 
-    st.subheader("Objects (records)")
-    if hasattr(mind, "objects") and getattr(mind.objects, "objects", None):
-        for oid, rec in mind.objects.objects.items():
-            st.write(f"- **{rec.label}** (entity={rec.entity_id}) attrs={rec.attributes or {}}")
-    else:
-        st.write("_None_")
+# -------------------------------
+# High-level state
+# -------------------------------
+st.subheader("System State")
+c1, c2, c3, c4, c5 = st.columns(5)
 
-    st.subheader("Confirmed Relationships")
-    rels = []
-    try:
-        rels = mind.relationships.all()
-    except Exception:
-        rels = []
-    if rels:
-        for r in rels:
-            subj = mind.bridge.entities.get(r.subject_id)
-            obj = mind.bridge.entities.get(r.object_id)
-            if subj and obj:
-                st.write(f"- **{subj.name}** → *{r.rel_type}* → **{obj.name}**")
-    else:
-        st.write("_None_")
+c1.metric("Entities", len(mind.bridge.entities))
+c2.metric("Objects", len(mind.objects.objects))
+c3.metric("Relationships", len(mind.relationships.relations))
+c4.metric("Events", len(mind.events.events))
+c5.metric("Experiences", len(mind.experiences.experiences))
 
-with col2:
-    st.subheader("Linguistic Guard (Stage 1)")
-    guard = getattr(mind.language, "last_guard", {}) or {}
-    accepted = guard.get("accepted", [])
-    rejected = guard.get("rejected", [])
+# -------------------------------
+# Awaiting state (VERY important)
+# -------------------------------
+st.subheader("Awaiting / Cognitive Hold State")
+if mind.awaiting:
+    st.warning("Mind is awaiting input")
+    st.json(mind.awaiting)
+else:
+    st.success("No pending cognitive state")
 
-    st.write("**Accepted candidates:**")
-    st.write(", ".join(accepted) if accepted else "_None_")
+st.divider()
 
-    st.write("**Rejected tokens:**")
-    if rejected:
-        for r in rejected:
-            st.write(f"- `{r['token']}` — {r['reason']}")
-    else:
-        st.write("_None_")
+# -------------------------------
+# ENTITIES
+# -------------------------------
+st.subheader("Entities")
+if not mind.bridge.entities:
+    st.info("No entities yet.")
+else:
+    for e in mind.bridge.entities.values():
+        with st.expander(f"{e.name} ({e.kind})"):
+            st.write(f"**Entity ID:** {e.entity_id}")
+            st.write(f"**Confidence:** {e.confidence}")
+            st.write(f"**Origin:** {e.origin}")
+            st.write(f"**Created:** {e.created_at}")
 
-    st.subheader("Pending Relationship Hypotheses")
-    pending_rel = []
-    try:
-        pending_rel = mind.pending_relationships.list_pending()
-    except Exception:
-        pending_rel = []
-    if pending_rel:
-        for p in pending_rel:
-            subj = mind.bridge.entities.get(p.subject_id)
-            obj = mind.bridge.entities.get(p.object_id)
-            if subj and obj:
-                st.write(f"- **{obj.name}** might be **{subj.name}**’s dog ({p.confidence:.2f})")
-    else:
-        st.write("_None_")
+# -------------------------------
+# OBJECTS
+# -------------------------------
+st.subheader("Objects")
+if not mind.objects.objects:
+    st.info("No objects yet.")
+else:
+    for o in mind.objects.objects.values():
+        with st.expander(f"{(o.colour + ' ') if o.colour else ''}{o.label}"):
+            st.write(f"**Object ID:** {o.object_id}")
+            st.write(f"**State:** {o.state}")
+            st.write(f"**Owner:** {mind.bridge.entities[o.owner_entity_id].name if o.owner_entity_id and o.owner_entity_id in mind.bridge.entities else '—'}")
+            st.write(f"**Attached To:** {mind.bridge.entities[o.attached_to].name if o.attached_to and o.attached_to in mind.bridge.entities else '—'}")
+            st.write(f"**Last Location:** {o.location or 'unknown'}")
+            st.write(f"**Created:** {o.created_at}")
+            st.write(f"**Last Seen:** {o.last_seen}")
 
-    st.subheader("Pending Object Disambiguations")
-    if hasattr(mind, "objects") and getattr(mind.objects, "pending", None):
-        pend = list(mind.objects.pending.values())
-        if pend:
-            for p in pend:
-                st.write(f"- ({p.stage}) {p.prompt}")
-        else:
-            st.write("_None_")
-    else:
-        st.write("_None_")
+# -------------------------------
+# RELATIONSHIPS
+# -------------------------------
+st.subheader("Relationships")
+if not mind.relationships.relations:
+    st.info("No relationships yet.")
+else:
+    for r in mind.relationships.relations:
+        a = mind.bridge.entities.get(r.subject_id)
+        b = mind.bridge.entities.get(r.object_id)
+        if not a or not b:
+            continue
+        st.write(f"• **{a.name}** → *{r.rel_type}* → **{b.name}**  ({r.note})")
 
-    st.subheader("Recent Events (with sensory)")
-    eg = getattr(mind, "events_graph", None)
-    if eg and getattr(eg, "events", None):
-        events = list(eg.events.values())
-        events = sorted(events, key=lambda e: e.timestamp, reverse=True)[:8]
-        for ev in events:
-            st.write(f"**{ev.place or 'event'}** — {ev.description}")
-            if ev.smells or ev.sounds or ev.raw_sensory:
-                st.write(f"- smells (norm): {ev.smells or []}")
-                st.write(f"- sounds (norm): {ev.sounds or []}")
-                st.write(f"- raw: {ev.raw_sensory or []}")
-            st.divider()
-    else:
-        st.write("_None_")
+# -------------------------------
+# EVENTS
+# -------------------------------
+st.subheader("Events (latest 30)")
+if not mind.events.events:
+    st.info("No events yet.")
+else:
+    for ev in reversed(mind.events.events[-30:]):
+        with st.expander(f"[{ev.place or '—'}] {ev.description[:60]}"):
+            st.write(f"**Description:** {ev.description}")
+            st.write(f"**Participants:** {', '.join(mind.bridge.entities[eid].name for eid in ev.participants if eid in mind.bridge.entities)}")
+            st.write(f"**Timestamp:** {ev.timestamp}")
+            if ev.smells:
+                st.write(f"**Smells:** {', '.join(ev.smells)}")
+            if ev.sounds:
+                st.write(f"**Sounds:** {', '.join(ev.sounds)}")
+
+# -------------------------------
+# EXPERIENCES
+# -------------------------------
+st.subheader("Experiences")
+if not mind.experiences.experiences:
+    st.info("No experiences yet.")
+else:
+    for ex in mind.experiences.experiences.values():
+        with st.expander(f"{ex.object_label} @ {ex.place}"):
+            st.write(f"**Experience ID:** {ex.experience_id}")
+            st.write(f"**Interaction:** {ex.interaction or '—'}")
+            st.write(f"**Visual:** {ex.visual or '—'}")
+            st.write(f"**Emotion:** {ex.emotion or '—'}")
+            st.write(f"**Action:** {ex.action or '—'}")
+            st.write(f"**Preference:** {ex.preference or '—'}")
+            st.write(f"**Created:** {ex.created_at}")
