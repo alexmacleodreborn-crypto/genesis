@@ -1,74 +1,65 @@
-from collections import defaultdict
-from datetime import datetime
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
+@dataclass
+class PlaceProfile:
+    name: str
+    level: int = 0
+    purpose: str = "room"
+    features: List[str] = field(default_factory=list)  # bed, window, curtains
+    sounds: List[str] = field(default_factory=list)    # hum, quiet
+    smells: List[str] = field(default_factory=list)    # clean, soap
+    wall_colour: str = "neutral"
+    windows: int = 1
 
+@dataclass
 class PersonProfile:
+    name: str
+    role: str  # mum, dad, caregiver
+    voice: str = "soft"
+    typical_actions: List[str] = field(default_factory=list)
+
+@dataclass
+class AnimalProfile:
+    name: str
+    species: str
+    temperament: str = "calm"
+    sounds: List[str] = field(default_factory=list)
+
+@dataclass
+class ObjectProfile:
+    name: str
+    category: str  # toy, furniture, tool, container
+    attributes: List[str] = field(default_factory=list)   # red, round
+    affordances: List[str] = field(default_factory=list)  # roll, throw, catch
+    container_of: Optional[str] = None  # if this object is a container, what it can hold
+
+class WorldProfiles:
     """
-    Language-derived profile of a person.
-    Built from tagged experience, not prompts.
-    """
-
-    def __init__(self, name=None):
-        self.name = name
-        self.created_at = datetime.utcnow().isoformat()
-
-        self.utterances = 0
-
-        # Domain familiarity (maths, AI, Sandy's Law, etc.)
-        self.domains = defaultdict(int)
-
-        # Social / affective indicators
-        self.references = defaultdict(int)
-        self.emotions = defaultdict(int)
-
-    # --------------------------------------------------
-    # Learning from tagged input
-    # --------------------------------------------------
-
-    def learn(self, text: str, tags_map: dict):
-        """
-        Learn from a single utterance using multi-domain tags.
-        """
-        self.utterances += 1
-
-        # Accumulate domain exposure
-        for domain, count in tags_map.items():
-            self.domains[domain] += count
-
-        # Simple social inference
-        if "relationship" in tags_map:
-            self.references["self"] += 1
-
-        if "emotion" in tags_map:
-            self.emotions["expressed"] += 1
-
-    # --------------------------------------------------
-    # Inspection
-    # --------------------------------------------------
-
-    def summary(self) -> dict:
-        return {
-            "name": self.name,
-            "utterances": self.utterances,
-            "domains": dict(self.domains),
-            "references": dict(self.references),
-            "emotions": dict(self.emotions),
-        }
-
-
-class ProfileManager:
-    """
-    Manages multiple person profiles.
+    Observer-controlled reality catalog.
+    A7DO never edits this directly.
     """
 
     def __init__(self):
-        self.profiles = {}
+        self.places: Dict[str, PlaceProfile] = {}
+        self.people: Dict[str, PersonProfile] = {}
+        self.animals: Dict[str, AnimalProfile] = {}
+        self.objects: Dict[str, ObjectProfile] = {}
 
-    def get_or_create(self, name):
-        key = name or "unknown"
-        if key not in self.profiles:
-            self.profiles[key] = PersonProfile(name)
-        return self.profiles[key]
+        # home scaffold settings
+        self.home_seed: int = 42
+        self.home_generated: bool = False
 
-    def summary(self):
-        return {k: v.summary() for k, v in self.profiles.items()}
+    def has_parents(self) -> bool:
+        roles = {p.role.lower() for p in self.people.values()}
+        return ("mum" in roles) and ("dad" in roles)
+
+    def snapshot(self):
+        return {
+            "home_seed": self.home_seed,
+            "home_generated": self.home_generated,
+            "places": list(self.places.keys()),
+            "people": [f"{p.name} ({p.role})" for p in self.people.values()],
+            "animals": [f"{a.name} ({a.species})" for a in self.animals.values()],
+            "objects": [f"{o.name} ({o.category})" for o in self.objects.values()],
+        }
