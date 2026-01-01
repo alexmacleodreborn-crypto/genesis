@@ -8,56 +8,47 @@ from typing import Dict, Optional, List
 class ObjectEntity:
     object_id: str
     label: str
-    colour: Optional[str] = None
-    owner_entity_id: Optional[str] = None
-    attached_to: Optional[str] = None   # pet or person
-    location: Optional[str] = None
-    state: str = "present"              # present | gone | unknown
-    created_at: float = time.time()
-    last_seen: Optional[float] = None
+    colour: Optional[str]
+    owner_entity_id: Optional[str]
+    attached_to: Optional[str]
+    state: str                # present | gone | unknown
+    created_at: float
+    last_seen: float
 
 
 class ObjectManager:
     def __init__(self):
         self.objects: Dict[str, ObjectEntity] = {}
 
-    # ---------- Creation ----------
-    def create(
-        self,
-        label: str,
-        colour: Optional[str] = None,
-        owner_entity_id: Optional[str] = None,
-    ) -> ObjectEntity:
+    def create(self, label, colour=None, owner_entity_id=None):
         obj = ObjectEntity(
             object_id=str(uuid.uuid4()),
             label=label,
             colour=colour,
             owner_entity_id=owner_entity_id,
+            attached_to=None,
+            state="present",
+            created_at=time.time(),
             last_seen=time.time(),
         )
         self.objects[obj.object_id] = obj
         return obj
 
-    # ---------- Lookup ----------
-    def candidates(self, label: str) -> List[ObjectEntity]:
-        return [
-            o for o in self.objects.values()
-            if o.label == label and o.state != "gone"
-        ]
+    def candidates(self, label) -> List[ObjectEntity]:
+        return [o for o in self.objects.values()
+                if o.label == label and o.state != "gone"]
 
-    def find_by_colour(self, label: str, colour: str) -> Optional[ObjectEntity]:
+    def find(self, label, colour=None):
         for o in self.objects.values():
-            if o.label == label and o.colour == colour and o.state != "gone":
-                return o
+            if o.label == label and o.state != "gone":
+                if colour is None or o.colour == colour:
+                    return o
         return None
 
-    # ---------- State ----------
     def mark_gone(self, obj: ObjectEntity):
         obj.state = "gone"
-        obj.location = None
         obj.last_seen = time.time()
 
-    # ---------- Attach ----------
     def attach(self, obj: ObjectEntity, entity_id: str):
         obj.attached_to = entity_id
         obj.last_seen = time.time()
