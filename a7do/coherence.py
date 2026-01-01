@@ -1,41 +1,33 @@
-# a7do/coherence.py
+from typing import Dict, Any
 
-class CoherenceScorer:
+class CoherenceEngine:
     """
-    Coherence scoring for A7DO.
-    Returns a score in [0,1] plus a label.
+    Simple, strict grounding checks.
+    - place must exist in homeplot rooms
+    - agent must exist in world people/animals
+    - parents must exist before non-parent learning events run
     """
 
-    def score(self, *, mode: str, emotion_value: float, signals: dict | None) -> dict:
-        # Base score by mode (recognition is naturally more stable)
-        base = 0.85 if mode == "recognition" else 0.65
+    def evaluate(self, world, homeplot, ev) -> Dict[str, Any]:
+        issues = []
+        if not homeplot or not homeplot.rooms:
+            issues.append("no_homeplot")
 
-        # Emotional penalty (large absolute emotion drifts reduce coherence)
-        # Keep mild effect; this is a toy stability term.
-        emo_penalty = min(abs(emotion_value) / 5.0, 0.25)  # caps at 0.25
+        if homeplot and ev.room not in homeplot.rooms:
+            issues.append(f"unknown_room:{ev.room}")
 
-        # Signal-based coherence from Z–Σ if available
-        sig_bonus = 0.0
-        if signals and signals.get("z") and signals.get("sigma"):
-            z = signals["z"]
-            sigma = signals["sigma"]
-            # coherence trace: sigma/(z+eps)
-            eps = 1e-3
-            coh = [s / (zz + eps) for s, zz in zip(sigma, z)]
-            # reward if median coherence stays under threshold (stable)
-            median = sorted(coh)[len(coh) // 2]
-            # Lower median coherence implies more constraint; clamp
-            stability = max(0.0, min(1.0, 1.0 - median))  # invert-ish
-            sig_bonus = 0.20 * stability  # small bonus
+        # agent must be in people or animals
+        agent_ok = (ev.agent in world.people) or (ev.agent in world.animals)
+        if not agent_ok:
+            issues.append(f"unknown_agent:{ev.agent}")
 
-        score = base - emo_penalty + sig_bonus
-        score = max(0.0, min(1.0, score))
+        # early rule: parents must exist to unlock learning
+        if not world.has_parents():
+            issues.append("parents_missing")
 
-        if score >= 0.75:
-            label = "GREEN"
-        elif score >= 0.55:
-            label = "AMBER"
-        else:
-            label = "RED"
+        # object should exist if specified
+        if ev.obj and (ev.obj not in world.objects):
+            issues.append(f"unknown_object:{ev.obj}")
 
-        return {"score": round(score, 3), "label": label}
+        score = 1.0 if not issues else max(0.0, 1.0 - 0.25 * len(issues))
+        return {"score": round(score, 2), "issues": issues}
