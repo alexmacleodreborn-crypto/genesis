@@ -19,6 +19,7 @@ from a7do.recall import RecallEngine
 
 
 PLACE_WORDS = {"park", "home", "garden", "vet", "beach", "gate", "street"}
+STOPWORDS = {"I", "We", "The", "A", "An", "It", "This", "That", "There", "Here"}
 
 
 class A7DOMind:
@@ -79,8 +80,14 @@ class A7DOMind:
         c = getattr(self.identity, "creator", None)
         return c if isinstance(c, str) else "Alex Macleod"
 
-    def _ensure_person(self, name: str):
-        self.bridge.confirm_entity(name=name, kind="person", owner_name=None)
+    def _ensure_person(self, name: str, confidence: float = 1.0):
+        self.bridge.confirm_entity(
+            name=name,
+            kind="person",
+            owner_name=None,
+            confidence=confidence,
+            origin="event" if confidence < 1.0 else "declarative"
+        )
 
     def _speaker_entity_id(self) -> Optional[str]:
         ent = self.bridge.find_entity(self._speaker_name(), owner_name=None)
@@ -121,14 +128,14 @@ class A7DOMind:
             name = m.group("name").strip()
             self.language.lock_speaker(name)
             setattr(self.identity, "creator", name)
-            self._ensure_person(name)
+            self._ensure_person(name, confidence=1.0)
             return {"answer": f"Locked. You are **{name}**.", "tags": tags}
 
         if self.RE_WHOAMI.match(text):
             return {"answer": f"You are **{self._speaker_name()}**.", "tags": tags}
 
         speaker = self._speaker_name()
-        self._ensure_person(speaker)
+        self._ensure_person(speaker, confidence=1.0)
 
         # ---------- Declarative facts ----------
         m = self.RE_MY_DOG.match(text)
@@ -144,7 +151,7 @@ class A7DOMind:
             self.bridge.confirm_entity(m.group("name"), kind="pet", owner_name=None)
             return {"answer": f"Noted. **{m.group('name')}** is a dog.", "tags": tags}
 
-        # ---------- OBJECT GROUNDING (FIX) ----------
+        # ---------- Object grounding ----------
         m = self.RE_COLORED_OBJECT.match(text)
         if m:
             color = m.group("color").lower()
@@ -186,16 +193,26 @@ class A7DOMind:
                 return {"answer": pending.prompt, "tags": tags}
             return {"answer": f"Noted. **{label}**.", "tags": tags}
 
-        # ---------- EVENT CAPTURE LAST ----------
+        # ---------- EVENT CAPTURE (with SOFT PERSON PROMOTION) ----------
         sx = self.sensory.extract(text)
         place = self._extract_place(text)
 
         participants: Set[str] = set()
+
+        # Soft promotion of capitalised names
+        tokens = re.findall(r"\b[A-Z][a-z]+\b", text)
+        for tok in tokens:
+            if tok in STOPWORDS:
+                continue
+            if not self.bridge.find_entity(tok, owner_name=None):
+                self._ensure_person(tok, confidence=0.4)
+
+        # Collect participants
         for e in self.bridge.entities.values():
             if e.name.lower() in lowered:
                 participants.add(e.entity_id)
 
-        if place or sx.smells or sx.sounds:
+        if place or sx.smells or sx.sounds or participants:
             self.events_graph.create_event(
                 participants=participants,
                 place=place,
