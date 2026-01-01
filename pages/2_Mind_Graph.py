@@ -7,14 +7,11 @@ import os
 from a7do.mind import A7DOMind
 
 # -------------------------------------------------
-# Page config
+# Page setup
 # -------------------------------------------------
 st.set_page_config(page_title="A7DO Mind Graph", layout="wide")
 st.title("🕸️ A7DO — Mind Graph")
 
-# -------------------------------------------------
-# Get persistent mind
-# -------------------------------------------------
 mind: A7DOMind = st.session_state.get("mind")
 
 if not mind:
@@ -22,7 +19,7 @@ if not mind:
     st.stop()
 
 # -------------------------------------------------
-# Helper: safe getters
+# Safe access helpers
 # -------------------------------------------------
 def safe_entities():
     bridge = getattr(mind, "bridge", None)
@@ -60,7 +57,7 @@ def safe_events():
 G = nx.Graph()
 
 # -------------------------------------------------
-# Add entity nodes
+# Entities
 # -------------------------------------------------
 for e in safe_entities():
     label = f"{e.name}\n({e.kind})"
@@ -76,7 +73,7 @@ for e in safe_entities():
     )
 
 # -------------------------------------------------
-# Add confirmed relationship edges
+# Confirmed relationships
 # -------------------------------------------------
 for r in safe_relationships():
     if r.subject_id in G.nodes and r.object_id in G.nodes:
@@ -89,27 +86,28 @@ for r in safe_relationships():
         )
 
 # -------------------------------------------------
-# Add pending relationship edges (dashed red)
+# Pending relationships (confidence-weighted)
 # -------------------------------------------------
 for p in safe_pending():
     if p.subject_id in G.nodes and p.object_id in G.nodes:
+        opacity = max(0.25, min(1.0, p.confidence))
         G.add_edge(
             p.subject_id,
             p.object_id,
             label=f"{p.rel_type}? ({p.confidence:.2f})",
-            color="red",
+            color=f"rgba(255,0,0,{opacity})",
             dashes=True,
             width=2,
         )
 
 # -------------------------------------------------
-# Add event nodes + edges
+# Events
 # -------------------------------------------------
 for ev in safe_events():
-    ev_node_id = f"event-{ev.event_id}"
+    ev_node = f"event-{ev.event_id}"
 
     G.add_node(
-        ev_node_id,
+        ev_node,
         label=ev.place or "Event",
         title=ev.description,
         shape="box",
@@ -120,35 +118,26 @@ for ev in safe_events():
         if pid in G.nodes:
             G.add_edge(
                 pid,
-                ev_node_id,
+                ev_node,
                 label="experienced",
                 color="#888888",
                 width=1,
             )
 
 # -------------------------------------------------
-# Render with PyVis
+# Render
 # -------------------------------------------------
-net = Network(
-    height="800px",
-    width="100%",
-    bgcolor="#ffffff",
-    font_color="black",
-)
-
+net = Network(height="800px", width="100%", bgcolor="#ffffff", font_color="black")
 net.from_nx(G)
 
-# Patch pending edges (pyvis sometimes drops dash styling)
+# Ensure dashed edges persist
 for e in net.edges:
     if isinstance(e.get("label"), str) and "?" in e["label"]:
-        e["color"] = "red"
         e["dashes"] = True
+        e["color"] = "red"
 
 net.toggle_physics(True)
 
-# -------------------------------------------------
-# Display
-# -------------------------------------------------
 with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp:
     net.save_graph(tmp.name)
     html_path = tmp.name
@@ -167,6 +156,7 @@ st.markdown(
 ### Legend
 - **Black edge** → confirmed relationship  
 - **Red dashed edge** → inferred (pending) relationship  
+- **Faded red** → low confidence (decaying)  
 - **Box node** → shared event  
 """
 )
