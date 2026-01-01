@@ -1,14 +1,9 @@
 class ExperienceStore:
-    """
-    Stores simple experiences.
-    No interpretation.
-    """
-
     def __init__(self):
-        self.raw_phrases = []
+        self.items = []
 
-    def add_raw_phrase(self, phrase: str):
-        self.raw_phrases.append(phrase)
+    def add(self, text):
+        self.items.append(text)
 
-    def recent(self, n=10):
-        return self.raw_phrases[-n:]
+    def recent(self, n=5):
+        return self.items[-n:]
