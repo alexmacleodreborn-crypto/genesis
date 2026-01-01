@@ -18,19 +18,11 @@ if not mind:
 # -------------------------
 
 def safe_events():
-    """
-    Returns a list of Event objects regardless of internal storage shape.
-    """
     evs = getattr(mind.events, "events", [])
-
-    # If someone accidentally passes a dict, recover
     if isinstance(evs, dict):
         return list(evs.values())
-
-    # Normal case (list)
     if isinstance(evs, list):
         return evs
-
     return []
 
 
@@ -65,17 +57,28 @@ for rel in safe_relationships():
 
 
 # --- Events ---
-for ev in safe_events():
-    ev_id = f"event:{ev.id}"
+events = safe_events()
+
+for idx, ev in enumerate(events):
+    # Stable fallback ID
+    ev_id = f"event_{idx}"
+
     G.add_node(ev_id, label="Event", type="event")
 
-    for ent_id in ev.entities:
+    # Link entities
+    for ent_id in getattr(ev, "entities", []):
         if ent_id in G:
             G.add_edge(ent_id, ev_id, label="experienced")
 
-    for obj_id in ev.objects:
+    # Link objects
+    for obj_id in getattr(ev, "objects", []):
         if obj_id in G:
             G.add_edge(obj_id, ev_id, label="involved")
+
+    # Link places
+    for place_id in getattr(ev, "places", []):
+        if place_id in G:
+            G.add_edge(place_id, ev_id, label="at")
 
 
 # -------------------------
