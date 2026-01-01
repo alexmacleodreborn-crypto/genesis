@@ -1,17 +1,10 @@
 class Lexicon:
-    """
-    Infant word store.
-    """
-
     def __init__(self):
         self.words = {}
-        # word -> count
 
-    def learn_from_tokens(self, tokens):
-        for t in tokens:
-            if t not in self.words:
-                self.words[t] = 0
-            self.words[t] += 1
+    def learn(self, phrase):
+        for w in phrase.split():
+            self.words[w] = self.words.get(w, 0) + 1
 
-    def known_words(self):
+    def snapshot(self):
         return dict(self.words)
