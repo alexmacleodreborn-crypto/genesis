@@ -34,6 +34,7 @@ class ObjectProfile:
     affordances: List[str] = field(default_factory=list)  # roll, throw, catch
     container_of: Optional[str] = None  # if this object is a container, what it can hold
 
+@dataclass
 class WorldProfiles:
     """
     Observer-controlled reality catalog.
