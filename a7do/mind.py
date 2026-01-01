@@ -22,11 +22,15 @@ PLACE_WORDS = {"park", "home", "garden", "vet", "beach", "gate", "street"}
 
 
 class A7DOMind:
-    RE_SELF = re.compile(r"^\s*(my\s+name\s+is|i\s+am|i'm)\s+(?P<name>[A-Za-z][A-Za-z\- ]+)\s*[.!?]*\s*$", re.I)
-    RE_WHOAMI = re.compile(r"^\s*who\s+am\s+i\s*\??\s*$", re.I)
+    # ---------- Declarative patterns ----------
+    RE_IS_A_DOG = re.compile(r"^\s*(?P<name>[A-Za-z][A-Za-z\- ]+?)\s+is\s+a\s+dog\s*[.!?]*$", re.I)
+    RE_MY_DOG = re.compile(r"^\s*(?P<name>[A-Za-z][A-Za-z\- ]+?)\s+is\s+my\s+dog\s*[.!?]*$", re.I)
 
-    RE_RECALL_ABOUT = re.compile(r"^\s*what\s+do\s+you\s+remember\s+about\s+(?P<target>.+?)\s*\??\s*$", re.I)
-    RE_RECALL_PLACE = re.compile(r"^\s*what\s+happened\s+at\s+(?P<place>.+?)\s*\??\s*$", re.I)
+    RE_SELF = re.compile(r"^\s*(my\s+name\s+is|i\s+am|i'm)\s+(?P<name>[A-Za-z][A-Za-z\- ]+)\s*[.!?]*$", re.I)
+    RE_WHOAMI = re.compile(r"^\s*who\s+am\s+i\s*\??$", re.I)
+
+    RE_RECALL_ABOUT = re.compile(r"^\s*what\s+do\s+you\s+remember\s+about\s+(?P<target>.+?)\s*\??$", re.I)
+    RE_RECALL_PLACE = re.compile(r"^\s*what\s+happened\s+at\s+(?P<place>.+?)\s*\??$", re.I)
 
     def __init__(self):
         self.identity = Identity()
@@ -93,9 +97,7 @@ class A7DOMind:
 
         self._memory_add_safe(kind="utterance", content=text, tags=tags, timestamp=now)
 
-        # -------------------------
-        # Recall v1
-        # -------------------------
+        # ---------- Recall ----------
         m = self.RE_RECALL_ABOUT.match(text)
         if m:
             target = m.group("target").strip()
@@ -108,17 +110,12 @@ class A7DOMind:
             events = self.recall_engine.recall(place=place)
             return {"answer": self.recall_engine.format(events), "tags": tags}
 
-        # -------------------------
-        # Identity binding
-        # -------------------------
+        # ---------- Identity ----------
         m = self.RE_SELF.match(text)
         if m:
             name = m.group("name").strip()
             self.language.lock_speaker(name)
-            try:
-                setattr(self.identity, "creator", name)
-            except Exception:
-                pass
+            setattr(self.identity, "creator", name)
             self._ensure_person(name)
             return {"answer": f"Locked. You are **{name}**.", "tags": tags}
 
@@ -128,9 +125,28 @@ class A7DOMind:
         speaker = self._speaker_name()
         self._ensure_person(speaker)
 
-        # -------------------------
-        # Event capture (+ sensory)
-        # -------------------------
+        # ---------- Declarative knowledge FIRST ----------
+        m = self.RE_MY_DOG.match(text)
+        if m:
+            pet_name = m.group("name").strip()
+            pet = self.bridge.confirm_entity(name=pet_name, kind="pet", owner_name=speaker)
+            owner = self.bridge.find_entity(speaker, owner_name=None)
+            if owner:
+                self.relationships.add(
+                    subject_id=owner.entity_id,
+                    object_id=pet.entity_id,
+                    rel_type="pet",
+                    note="explicit declaration"
+                )
+            return {"answer": f"Noted. **{pet_name}** is your dog.", "tags": tags}
+
+        m = self.RE_IS_A_DOG.match(text)
+        if m:
+            pet_name = m.group("name").strip()
+            self.bridge.confirm_entity(name=pet_name, kind="pet", owner_name=None)
+            return {"answer": f"Noted. **{pet_name}** is a dog.", "tags": tags}
+
+        # ---------- EVENT CAPTURE LAST ----------
         sx = self.sensory.extract(text)
         place = self._extract_place(text)
 
@@ -143,7 +159,7 @@ class A7DOMind:
             if e.name.lower() in lowered:
                 participants.add(e.entity_id)
 
-        if place or participants or sx.smells or sx.sounds:
+        if place or sx.smells or sx.sounds:
             self.events_graph.create_event(
                 participants=participants,
                 place=place,
