@@ -18,4 +18,4 @@ for p in mind.experiences.recent(10):
     st.write("•", p)
 
 st.subheader("Known Words")
-st.json(mind.lexicon.known_words())
+st.json(mind.lexicon.snapshot())
