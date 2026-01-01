@@ -1,7 +1,7 @@
 import time
 import re
 import inspect
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Any, Optional, Set, Tuple
 
 from a7do.identity import Identity
 from a7do.memory import Memory
@@ -15,6 +15,7 @@ from a7do.entity_promotion import EntityPromotionBridge
 from a7do.language import LanguageModule
 from a7do.event_graph import EventGraph
 from a7do.relationships import RelationshipStore
+from a7do.pending_relationships import PendingRelationshipStore
 
 
 PLACE_WORDS = {"park", "home", "garden", "vet", "beach", "gate", "street"}
@@ -25,10 +26,19 @@ class A7DOMind:
     RE_IS_A_DOG = re.compile(r"^\s*(?P<name>.+?)\s+is\s+a\s+dog\s*[.!?]*\s*$", re.I)
     RE_MY_DOG_CALLED = re.compile(r"^\s*my\s+dog\s+is\s+(called|named)\s+(?P<name>.+?)\s*[.!?]*\s*$", re.I)
 
-    # Relationship patterns (speaker-relative)
-    RE_X_IS_MY_REL = re.compile(r"^\s*(?P<name>.+?)\s+is\s+my\s+(?P<rel>friend|family|mum|mom|dad|father|mother|brother|sister|partner|wife|husband|coworker|co-worker|colleague|doctor|dentist)\s*[.!?]*\s*$", re.I)
-    RE_MY_REL_IS_X = re.compile(r"^\s*my\s+(?P<rel>friend|family|doctor|dentist|coworker|co-worker|colleague)\s+is\s+(?P<name>.+?)\s*[.!?]*\s*$", re.I)
+    RE_X_IS_MY_REL = re.compile(
+        r"^\s*(?P<name>.+?)\s+is\s+my\s+(?P<rel>friend|family|mum|mom|dad|father|mother|brother|sister|partner|wife|husband|coworker|co-worker|colleague|doctor|dentist)\s*[.!?]*\s*$",
+        re.I,
+    )
+    RE_MY_REL_IS_X = re.compile(
+        r"^\s*my\s+(?P<rel>friend|family|doctor|dentist|coworker|co-worker|colleague)\s+is\s+(?P<name>.+?)\s*[.!?]*\s*$",
+        re.I,
+    )
     RE_I_WORK_WITH = re.compile(r"^\s*i\s+work\s+with\s+(?P<name>.+?)\s*[.!?]*\s*$", re.I)
+
+    RE_NO_OVERRIDE = re.compile(r"^\s*no[:,]?\s*(?P<rest>.+)\s*$", re.I)
+    YES_WORDS = {"yes", "y", "yeah", "yep", "correct", "right", "true"}
+    NO_WORDS = {"no", "n", "nope", "nah", "incorrect", "wrong", "false"}
 
     def __init__(self):
         self.identity = Identity()
@@ -44,8 +54,10 @@ class A7DOMind:
         self.language = LanguageModule()
         self.events_graph = EventGraph()
 
-        # NEW: first-class relationships
         self.relationships = RelationshipStore()
+        self.pending_relationships = PendingRelationshipStore()
+
+        self.awaiting_confirmation: Optional[Tuple[str, str]] = None
 
         self._memory_add_sig = inspect.signature(self.memory.add)
 
@@ -96,8 +108,95 @@ class A7DOMind:
         if name:
             self.bridge.confirm_entity(name=name, kind="person", owner_name=None)
 
+    def _has_confirmed_owner(self, pet_entity_id: str) -> bool:
+        for r in self.relationships.all():
+            if r.rel_type == "pet" and r.object_id == pet_entity_id:
+                return True
+        return False
+
+    def _maybe_create_pending_pet_owner_from_event(self, event_participants: Set[str]) -> Optional[Dict[str, Any]]:
+        persons = []
+        pets = []
+        for pid in event_participants:
+            ent = self.bridge.entities.get(pid)
+            if not ent:
+                continue
+            if ent.kind == "person":
+                persons.append(ent)
+            elif ent.kind == "pet":
+                pets.append(ent)
+
+        if not persons or not pets:
+            return None
+
+        for pet in pets:
+            if self._has_confirmed_owner(pet.entity_id):
+                continue
+
+            speaker = self._speaker_name().strip().lower()
+
+            for person in persons:
+                if person.name.strip().lower() == speaker:
+                    continue
+
+                pending = self.pending_relationships.add(
+                    subject_id=person.entity_id,
+                    object_id=pet.entity_id,
+                    rel_type="pet",
+                    confidence=0.55,
+                    evidence={"rule": "event_cooccurrence"},
+                    note="Inferred from shared event co-occurrence",
+                )
+
+                q = f"It looks like **{pet.name}** might be **{person.name}**’s dog. Is that correct?"
+                self.awaiting_confirmation = (pending.pending_id, q)
+                return {"answer": q, "pending": pending.pending_id}
+
+        return None
+
+    def _handle_confirmation(self, text: str) -> Optional[Dict[str, Any]]:
+        if not self.awaiting_confirmation:
+            return None
+
+        pending_id, _ = self.awaiting_confirmation
+        t = (text or "").strip().lower()
+
+        m_over = self.RE_NO_OVERRIDE.match(text or "")
+        if m_over:
+            self.pending_relationships.reject(pending_id)
+            self.awaiting_confirmation = None
+            return {"answer": "Okay — understood. State the correct relationship (e.g., “Millie is my dog”)."}
+
+        if t in self.YES_WORDS:
+            p = None
+            # Pending store has no direct get() in our decay version; keep it simple:
+            for item in self.pending_relationships.list_pending():
+                if item.pending_id == pending_id:
+                    p = item
+                    break
+            if not p:
+                self.awaiting_confirmation = None
+                return {"answer": "Okay."}
+
+            self.relationships.add(subject_id=p.subject_id, object_id=p.object_id, rel_type=p.rel_type, note="Confirmed pending inference")
+            self.pending_relationships.confirm(pending_id)
+            self.awaiting_confirmation = None
+
+            subj = self.bridge.entities.get(p.subject_id)
+            obj = self.bridge.entities.get(p.object_id)
+            if subj and obj:
+                return {"answer": f"Confirmed. **{obj.name}** is **{subj.name}**’s dog."}
+            return {"answer": "Confirmed."}
+
+        if t in self.NO_WORDS:
+            self.pending_relationships.reject(pending_id)
+            self.awaiting_confirmation = None
+            return {"answer": "Got it — I won’t assume that relationship."}
+
+        return None
+
     # -----------------------------
-    # Main cognition loop
+    # Main loop
     # -----------------------------
     def process(self, text: str) -> Dict[str, Any]:
         now = time.time()
@@ -105,10 +204,14 @@ class A7DOMind:
         lowered = text.lower().strip()
         tags = self.tagger.tag(text) or []
 
-        # raw memory
         self._memory_add_safe(kind="utterance", content=text, tags=tags, timestamp=now)
 
-        # 1) language self-binding
+        # 0) Confirmation
+        conf = self._handle_confirmation(text)
+        if conf:
+            return {**conf, "tags": tags}
+
+        # 1) Self-binding
         lang = self.language.interpret(text)
         if lang.get("self_assertion") and lang.get("speaker_name"):
             name = lang["speaker_name"]
@@ -123,17 +226,16 @@ class A7DOMind:
         speaker = self._speaker_name()
         self._ensure_person_entity(speaker)
 
-        # 2) who am I
+        # 2) Identity query
         if lowered.startswith("who am i"):
             return {"answer": f"You are **{speaker}**.", "tags": tags}
 
-        # 3) PET & DOG statements (keep working exactly)
+        # 3) Pets (explicit)
         m = self.RE_MY_DOG_CALLED.match(text)
         if m:
             pet_name = m.group("name").strip().strip(" .!?")
             pet_name = pet_name[:1].upper() + pet_name[1:] if pet_name else pet_name
             ent = self.bridge.confirm_entity(name=pet_name, kind="pet", owner_name=speaker, relation="my dog")
-            # first-class relationship
             spid = self._speaker_entity_id(speaker)
             if spid:
                 self.relationships.add(subject_id=spid, object_id=ent.entity_id, rel_type="pet", note="my dog")
@@ -156,8 +258,7 @@ class A7DOMind:
             ent = self.bridge.confirm_entity(name=pet_name, kind="pet", owner_name=None)
             return {"answer": f"Noted. **{ent.name}** is a dog.", "tags": tags}
 
-        # 4) Relationship statements
-        # "Craig is my friend" / "Sarah is my dentist" / etc.
+        # 4) Relationships
         m = self.RE_X_IS_MY_REL.match(text)
         if m:
             other = m.group("name").strip().strip(" .!?")
@@ -166,12 +267,10 @@ class A7DOMind:
 
             sp = self.bridge.find_entity(speaker, owner_name=None)
             ob = self.bridge.find_entity(other, owner_name=None)
-
             if sp and ob:
                 self.relationships.add(subject_id=sp.entity_id, object_id=ob.entity_id, rel_type=rel, note=f"{other} is my {rel}")
                 return {"answer": f"Noted. **{other}** is your **{rel}**.", "tags": tags}
 
-        # "My doctor is Sarah"
         m = self.RE_MY_REL_IS_X.match(text)
         if m:
             rel = self._canon_rel(m.group("rel"))
@@ -180,12 +279,10 @@ class A7DOMind:
 
             sp = self.bridge.find_entity(speaker, owner_name=None)
             ob = self.bridge.find_entity(other, owner_name=None)
-
             if sp and ob:
                 self.relationships.add(subject_id=sp.entity_id, object_id=ob.entity_id, rel_type=rel, note=f"my {rel} is {other}")
                 return {"answer": f"Noted. **{other}** is your **{rel}**.", "tags": tags}
 
-        # "I work with Craig" -> coworker
         m = self.RE_I_WORK_WITH.match(text)
         if m:
             other = m.group("name").strip().strip(" .!?")
@@ -193,12 +290,11 @@ class A7DOMind:
 
             sp = self.bridge.find_entity(speaker, owner_name=None)
             ob = self.bridge.find_entity(other, owner_name=None)
-
             if sp and ob:
                 self.relationships.add(subject_id=sp.entity_id, object_id=ob.entity_id, rel_type="coworker", note="I work with")
                 return {"answer": f"Noted. You work with **{other}**.", "tags": tags}
 
-        # 5) Shared experience → event graph (unchanged)
+        # 5) Events
         if "with" in lowered:
             place = self._extract_place(text)
             participants: Set[str] = set()
@@ -218,36 +314,18 @@ class A7DOMind:
                     description=text,
                     timestamp=now,
                 )
+
+                inf = self._maybe_create_pending_pet_owner_from_event(participants)
+                if inf:
+                    return {"answer": inf["answer"], "tags": tags, "pending": inf["pending"]}
+
                 return {"answer": "Noted — that experience has been remembered.", "tags": tags}
 
-        # 6) Recall (events)
-        if lowered.startswith("what do you remember about "):
-            name = text.split("about", 1)[1].strip(" ?!.")
-            ent = self.bridge.find_entity(name, owner_name=speaker)
-            if not ent:
-                return {"answer": f"I don’t have memories linked to **{name}** yet.", "tags": tags}
-
-            evs = self.events_graph.events_for_entity(ent.entity_id)
-            if not evs:
-                return {"answer": f"I don’t remember any shared experiences with **{name}** yet.", "tags": tags}
-
-            lines = []
-            for ev in evs:
-                others = [
-                    self.bridge.entities[pid].name
-                    for pid in ev.participants
-                    if pid != ent.entity_id and pid in self.bridge.entities
-                ]
-                if ev.place and others:
-                    lines.append(f"{' and '.join(others)} were at the {ev.place} with {ent.name}.")
-                elif ev.place:
-                    lines.append(f"{ent.name} was at the {ev.place}.")
-                else:
-                    lines.append(ev.description)
-
-            return {"answer": " ".join(lines), "tags": tags}
-
-        # fallback: observe titlecase
-        self.bridge.observe(text, owner_name=speaker)
+        # 6) Stage-1 LRF guarded promotion (THIS IS THE STAGE-1 FIX)
+        candidates = self.language.entity_candidates(text)
+        for name in candidates:
+            # Default kind: person (Stage-1)
+            # This stops "What/You/Name/Or/First" being promoted
+            self.bridge.confirm_entity(name=name, kind="person", owner_name=None)
 
         return {"answer": "Noted.", "tags": tags}
